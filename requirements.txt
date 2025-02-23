@@ -1,0 +1,20 @@
+torch==1.13.1
+torchaudio==0.13.1
+torchvision==0.14.1
+tqdm
+tensorboard
+torchmetrics
+pytorch3d
+plyfile
+pytorch_msssim
+trimesh
+scikit-image
+open3d
+pyyaml
+scipy
+opencv-python
+matplotlib
+GPUtil
+-e submodules/cuda_utils
+-e submodules/diff-gaussian-rasterizer-depth
+-e submodules/simple-knn
