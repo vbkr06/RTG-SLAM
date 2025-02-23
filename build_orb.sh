@@ -13,7 +13,7 @@ numpy_include=$(python -c "import numpy; print(numpy.get_include())")
 
 echo ${python_env}
 
-# # build pangolin
+# build pangolin
 git clone -b v0.5 https://github.com/stevenlovegrove/Pangolin.git
 cd Pangolin
 mkdir -p build && cd build
@@ -27,7 +27,7 @@ unzip 4.2.0.zip
 cd opencv-4.2.0
 mkdir -p build && cd build
 cmake .. -DCMAKE_INSTALL_PREFIX=${install_path}
-make install -j 
+make install -j6
 
 opencv_dir=${install_path}/lib/cmake/opencv4
 
@@ -38,18 +38,25 @@ bash build.sh ${opencv_dir} ${install_path}
 cd ../
 
 
-# # build pybind
-# # build boost
-wget -t 999 -c https://boostorg.jfrog.io/artifactory/main/release/1.80.0/source/boost_1_80_0.zip
-unzip boost_1_80_0.zip
+# build pybind
+# build boost
+
+# Download and extract Boost (fixing broken zip issue)
+# echo "Downloading Boost 1.80.0..."
+# wget -O boost_1_80_0.tar.gz https://downloads.sourceforge.net/project/boost/boost/1.80.0/boost_1_80_0.tar.gz
+
+# echo "Extracting Boost..."
+# tar -xzf boost_1_80_0.tar.gz
+
 cd boost_1_80_0
+
+echo "Bootstrapping Boost..."
 ./bootstrap.sh --with-libraries=python --prefix=${install_path} --with-python=${python_exe}
 
-# # ./b2
+echo "Building and installing Boost..."
 ./b2 install --with-python include=${python_include} --prefix=${install_path}
 
-
-# # build orbslam_pybind
+# build orbslam_pybind
 cd ../pybind
 mkdir -p build && cd build
 
