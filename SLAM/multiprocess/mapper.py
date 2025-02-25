@@ -94,8 +94,10 @@ class Mapping(object):
         self.scaling_lr_coef = args.scaling_lr_coef
         self.rotation_lr_coef = args.rotation_lr_coef
         
-    def mapping(self, frame, frame_map, frame_id, optimization_params):
+    def mapping(self, frame, frame_map, frame_id, optimization_params, sam_masks, rend_clusters, mask_lang_feat):
         self.frame_map = frame_map
+        # add new gaussians to self.pointcloud
+        # self.temp_pointcloud is always empty afterwards
         self.gaussians_add(frame)
         self.processed_frames.append(frame)
         self.processed_map.append(frame_map)
@@ -120,9 +122,16 @@ class Mapping(object):
                         select_keyframe_num=self.global_keyframe_num
                     )
                 self.gaussians_delete(unstable=False)
+        # remove from self.point_cloud, add to self.stable
         self.gaussians_fix()
+        # remove from stable_pointcloud if depth-error-counter exceeds threshold
+        # move from stable_pointcloud to self.pointcloud if color-error-counter exceeds threshold
         self.error_gaussians_remove()
+        # delete gaussians from self.pointcloud if they are too big or if they are unstable to for too long
         self.gaussians_delete()
+        
+        # self.semantic_clustering(frame, frame_map, frame_id, optimization_params, sam_masks, rend_clusters, mask_lang_feat)
+        
         move_to_cpu(frame)
 
     def gaussians_add(self, frame):
@@ -892,6 +901,7 @@ class Mapping(object):
             )
         remove_mask = devB(torch.ones(self.temp_pointcloud.get_points_num))
         temp_params = self.temp_pointcloud.remove(remove_mask)
+        # print("alarm\n\n\n\n\n\n\n" + str(self.temp_pointcloud.get_points_num) + "\n\n\n\n\n\n\n")
         self.pointcloud.cat(temp_params)
 
     # detect isolated gaussians by KNN
@@ -992,6 +1002,9 @@ class Mapping(object):
             1, 2, 0
         )
         self.model_map["render_transmission"] = render_output["T_map"].permute(1, 2, 0)
+
+    def semantic_clustering(self, frame, frame_map, frame_id, optimization_params, sam_masks, rend_clusters, mask_lang_feat):
+        pass
 
     @property
     def stable_params(self):

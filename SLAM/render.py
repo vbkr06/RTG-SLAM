@@ -126,6 +126,8 @@ class Renderer:
         color_hit_weight = render_results[4]
         depth_hit_weight = render_results[5]
         T_map = render_results[6]
+        gaussian_contr = render_results[8]
+        gaussian_alphas = render_results[9]
 
         render_normal = devF(torch.zeros_like(rendered_image))
         render_normal[:, depth_index_map[0] > -1] = normal[
@@ -141,5 +143,7 @@ class Renderer:
             "color_hit_weight": color_hit_weight,
             "depth_hit_weight": depth_hit_weight,
             "T_map": T_map,
+            "pixelwise_contribution": gaussian_contr,
+            "contributing_alphas" : gaussian_alphas
         }
         return results
