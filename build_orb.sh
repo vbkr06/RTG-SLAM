@@ -6,7 +6,7 @@ mkdir -p ${install_path}
 
 python_prefix=$(python -c "import sys; print(sys.prefix)")  
 python_include=${python_prefix}/include/python3.9/
-python_lib=${python_prefix}/lib/x86_64-linux-gnu/libpython3.9.so
+python_lib=${python_prefix}/lib/libpython3.9.so  #/x86_64-linux-gnu/libpython3.9.so
 python_exe=${python_prefix}/bin/python3.9
 python_env=/home/dengnanxing/.local/lib/python3.9/site-packages #${python_prefix}/lib/python3.9/site-packages/
 numpy_include=$(python -c "import numpy; print(numpy.get_include())")  
