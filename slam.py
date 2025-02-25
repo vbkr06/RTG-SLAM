@@ -7,8 +7,14 @@ parser.add_argument("--config", type=str, default="configs/replica/office0.yaml"
 args = parser.parse_args()
 config_path = args.config
 args = read_config(config_path)
-os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(device) for device in args.device_list)
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"#,".join(str(device) for device in args.device_list)
 import torch
+# import sys
+# print(f"Python Executable: {sys.executable}")
+# print(f"PyTorch Version: {torch.__version__}")
+# print(f"CUDA available: {torch.cuda.is_available()}")
+# print(f"CUDA Device Count: {torch.cuda.device_count()}")
+# print(f"CUDA Device Name: {torch.cuda.get_device_name(0)}")
 import json
 from utils.camera_utils import loadCam
 from arguments import DatasetParams, MapParams, OptimizationParams
