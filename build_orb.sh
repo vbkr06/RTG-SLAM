@@ -6,9 +6,9 @@ mkdir -p ${install_path}
 
 python_prefix=$(python -c "import sys; print(sys.prefix)")  
 python_include=${python_prefix}/include/python3.9/
-python_lib=${python_prefix}/lib/libpython3.9.so
-python_exe=${python_prefix}/bin/python
-python_env=${python_prefix}/lib/python3.9/site-packages/
+python_lib=${python_prefix}/lib/x86_64-linux-gnu/libpython3.9.so
+python_exe=${python_prefix}/bin/python3.9
+python_env=/home/dengnanxing/.local/lib/python3.9/site-packages #${python_prefix}/lib/python3.9/site-packages/
 numpy_include=$(python -c "import numpy; print(numpy.get_include())")  
 
 echo ${python_env}
@@ -42,11 +42,11 @@ cd ../
 # build boost
 
 # Download and extract Boost (fixing broken zip issue)
-# echo "Downloading Boost 1.80.0..."
-# wget -O boost_1_80_0.tar.gz https://downloads.sourceforge.net/project/boost/boost/1.80.0/boost_1_80_0.tar.gz
+echo "Downloading Boost 1.80.0..."
+wget -O boost_1_80_0.tar.gz https://downloads.sourceforge.net/project/boost/boost/1.80.0/boost_1_80_0.tar.gz
 
-# echo "Extracting Boost..."
-# tar -xzf boost_1_80_0.tar.gz
+echo "Extracting Boost..."
+tar -xzf boost_1_80_0.tar.gz
 
 cd boost_1_80_0
 
@@ -74,3 +74,4 @@ cmake .. -DPYTHON_INCLUDE_DIRS=${python_include} \
 
 make install -j
 
+#export LD_LIBRARY_PATH=/home/dengnanxing/RTG-SLAM/thirdParty/install/lib:$LD_LIBRARY_PATH
