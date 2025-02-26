@@ -1145,12 +1145,12 @@ class Mapping(object):
         
         cluster_wise_gaussian_contr = torch.zeros((visible_clusters_ind.size(0), pixel_to_gaussian_map.size(1), pixel_to_gaussian_map.size(2)), device='cuda')
         # render old cluster sils
-        for i in visible_clusters_ind:
+        for ind, i in enumerate(visible_clusters_ind):
             gaussians_of_one_cluster = assignments[:, i]
             mod_par = {key: stable_par[key][gaussians_of_one_cluster].cuda() for key in stable_par}
             render_new_output = self.renderer.render(check_frame, mod_par)#self.get_point_subset(gaussians_of_one_cluster))
             rend_clusters[i.item()] = render_new_output['render'].sum(dim=0).bool()
-            cluster_wise_gaussian_contr[i.item()] = render_new_output['pixelwise_contribution'][0]
+            cluster_wise_gaussian_contr[ind] = render_new_output['pixelwise_contribution'][0]
             
         # get tensors containing language features of all clusters
         # first compute language features for all clusters
