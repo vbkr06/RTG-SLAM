@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
 import cv2
-from benchmarking.label_gaussians_scannet import load_text_embeddings
+# from benchmarking.label_gaussians_scannet import load_text_embeddings
 
 
 def plot_single_cluster(rendered_features,
@@ -44,7 +44,7 @@ def plot_single_cluster(rendered_features,
 def plot_cluster_language_association(
     rendered_cluster_features,
     per_cluster_lang_feat,  # CLIP features [num_clusters, embedding_dim]
-    image,                  # Real image (C, H, W)
+    camera,                  # Real image (C, H, W)
     cluster_indices,
     out_file_prefix="visualization/cluster_visualization",
     alpha=0.7,
@@ -56,19 +56,19 @@ def plot_cluster_language_association(
         return
     cmap = plt.get_cmap("tab20")
 
-    C, H, W = rendered_cluster_features[0].shape
+    H, W = rendered_cluster_features[0].shape
 #    
     individual_image = torch.zeros((3, H, W), dtype=torch.float32)
 
     for cluster_idx in cluster_indices:
         cluster_feat = rendered_cluster_features[cluster_idx]  # [C, H, W]
-        nonzero_mask = (cluster_feat.abs().sum(dim=0) > 0)
+        nonzero_mask = (cluster_feat.abs() > 0)
         color = cmap(cluster_idx % 20)[:3]
         color_tensor = torch.tensor(color, dtype=torch.float32)
         individual_image[:, nonzero_mask] = color_tensor.view(3, 1)
 
     # Overlay both images onto the original image
-    base_img = (image.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+    base_img = (camera.original_image.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
 
     def overlay_clusters(accum_img, base, out_filename):
         accum_np = accum_img.numpy().transpose(1, 2, 0)  # [H, W, 3]

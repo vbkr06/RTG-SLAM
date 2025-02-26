@@ -3,8 +3,8 @@ from argparse import ArgumentParser
 
 from utils.config_utils import read_config
 parser = ArgumentParser(description="Training script parameters")
-parser.add_argument("--config", type=str, default="configs/replica/office0.yaml")
-args = parser.parse_args()
+parser.add_argument("--config", type=str, default="configs/replica/room0.yaml")
+args = parser.parse_args()  
 config_path = args.config
 args = read_config(config_path)
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"#,".join(str(device) for device in args.device_list)
