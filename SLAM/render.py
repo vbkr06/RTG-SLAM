@@ -57,6 +57,43 @@ class Renderer:
     def get_covariance(self, scaling, rotaion, scaling_modifier=1):
         return self.covariance_activation(scaling, scaling_modifier, rotaion)
 
+    def get_visible_mask(self, viewpoint_camera: Camera, gaussian_data, tile_mask=None):
+        tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
+        tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
+        self.raster_settings = GaussianRasterizationSettings_depth(
+            image_height=int(viewpoint_camera.image_height),
+            image_width=int(viewpoint_camera.image_width),
+            tanfovx=tanfovx,
+            tanfovy=tanfovy,
+            bg=self.bg_color,
+            scale_modifier=self.scaling_modifier,
+            viewmatrix=viewpoint_camera.world_view_transform,
+            projmatrix=viewpoint_camera.full_proj_transform,
+            sh_degree=self.active_sh_degree,
+            campos=viewpoint_camera.camera_center,
+            opaque_threshold=self.renderer_opaque_threshold,
+            depth_threshold=self.renderer_depth_threshold,
+            normal_threshold=self.renderer_normal_threshold,
+            color_sigma=self.color_sigma,
+            prefiltered=False,
+            debug=False,
+            cx=viewpoint_camera.cx,
+            cy=viewpoint_camera.cy,
+            T_threshold=0.0001,
+        )
+        rasterizer = GaussianRasterizer_depth(
+            raster_settings=self.raster_settings
+        )
+
+        means3D = gaussian_data["xyz"]
+    
+        render_results = rasterizer.markVisible(
+            positions=means3D
+        )
+        
+        return render_results
+        
+
     def render(
         self,
         viewpoint_camera: Camera,

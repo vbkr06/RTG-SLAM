@@ -207,3 +207,51 @@ def save_tensor_to_ply(save_path, xyz, voxel_size=-1):
     if voxel_size > 0:
         pcd = pcd.voxel_down_sample(voxel_size=voxel_size)
     o3d.io.write_point_cloud(save_path, pcd)
+
+def calculate_iou(masks1, masks2, base=None, batch_size=8):
+    """
+    Intersection over Union (IoU) between two sets of masks,
+    batching only over masks1.
+    Args:
+        masks1: PyTorch tensor of shape [n, H, W], dtype=torch.bool.
+        masks2: PyTorch tensor of shape [m, H, W], dtype=torch.bool.
+        base: Determines the union calculation ("former", "later", or None for default IoU).
+        batch_size: Number of masks from masks1 to process in one batch.
+    Returns:
+        iou_matrix: PyTorch tensor of shape [m, n], containing IoU values.
+    """
+    # Ensure the masks are boolean
+    if masks1.dtype != torch.bool:
+        masks1 = masks1.to(torch.bool)
+    if masks2.dtype != torch.bool:
+        masks2 = masks2.to(torch.bool)
+
+    m, h, w = masks2.shape
+    n, _, _ = masks1.shape
+
+    # Initialize the IoU matrix
+    iou_matrix = torch.zeros((m, n), device=masks1.device, dtype=torch.float32)
+
+    # Expand masks2 once to avoid repeated expansion
+    masks2_expanded = masks2.unsqueeze(1)  # [m, 1, H, W]
+
+    # Process masks1 in batches
+    for j in range(0, n, batch_size):
+        masks1_batch = masks1[j:j+batch_size]  # Take a batch of masks1 [batch_size, H, W]
+        masks1_batch_expanded = masks1_batch.unsqueeze(0)  # [1, batch_size, H, W]
+
+        # Compute intersection
+        intersection = (masks2_expanded & masks1_batch_expanded).float().sum(dim=(2, 3))  # [m, batch_size]
+
+        # Compute union
+        if base == "former":
+            union = masks1_batch_expanded.float().sum(dim=(2, 3)).transpose(0, 1) + 1e-6  # [batch_size, 1]
+        elif base == "later":
+            union = masks2_expanded.float().sum(dim=(2, 3)) + 1e-6  # [m, 1]
+        else:
+            union = (masks2_expanded | masks1_batch_expanded).float().sum(dim=(2, 3)) + 1e-6  # [m, batch_size]
+
+        # Compute IoU for this batch
+        iou_matrix[:, j:j+batch_size] = intersection / union
+        
+    return iou_matrix
