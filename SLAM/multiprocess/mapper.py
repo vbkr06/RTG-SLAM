@@ -15,7 +15,7 @@ from utils.loss_utils import l1_loss, l2_loss, ssim
 from cuda_utils._C import accumulate_gaussian_error
 from utils.monitor import Recorder
 from utils.general_utils import calculate_iou
-from clustering.association_visualizer import plot_cluster_language_association
+from clustering.association_visualizer import plot_cluster_language_association, plot_single_cluster
 import torch.nn.functional as F
 
 class Mapping(object):
@@ -1067,22 +1067,30 @@ class Mapping(object):
         if num_masks == 0:
             return
         
+        if self.stable_pointcloud.get_points_num == 0:
+            return
+        
         # now create a local assignments array that includes all gaussians used for clustering
         # num_stable_gaussians = self.stable_assignments.size(0)
-        num_unstable_gaussians = self.unstable_assignments.size(0)
-        if self.stable_assignments != None and self.stable_assignments.size(0) != 0:
-            assignments = torch.cat([self.unstable_assignments, self.stable_assignments], dim=0)
-        else:
-            assignments = self.unstable_assignments
-        current_assignments = torch.zeros(assignments.shape[0], num_masks, dtype=torch.bool, device=assignments.device)
+        #num_unstable_gaussians = self.unstable_assignments.size(0)
+        # if self.stable_assignments != None and self.stable_assignments.size(0) != 0:
+        #     assignments = torch.cat([self.unstable_assignments, self.stable_assignments], dim=0)
+        # else:
+        #     assignments = self.unstable_assignments
+        assignments = self.stable_assignments
+        num_gaussians = self.stable_pointcloud.get_points_num
+        current_assignments = torch.zeros(num_gaussians, num_masks, dtype=torch.bool, device='cuda')
 
         # render unstable and stable gaussians -> get pixelwise gaussians
+        global_par_curr_frame = self.global_params
         check_frame = self.processed_frames[-1]
         render_output = self.renderer.render(
-            check_frame, self.global_params
+            check_frame, global_par_curr_frame
         )
         pixel_to_gaussian_map = render_output["pixelwise_contribution"]
-
+        
+        stable_par = {key: global_par_curr_frame[key][self.pointcloud.get_points_num:] for key in global_par_curr_frame}
+            
         # render the clustered gaussians (clustered by the current masks)
         for mask_id in range(num_masks):
             new_cluster_index = assignments.size(1) + mask_id
@@ -1090,17 +1098,25 @@ class Mapping(object):
             participating_gaussians = torch.unique(pixel_to_gaussian_map[0][sam_masks[mask_id].cuda()])
             participating_gaussians = participating_gaussians[participating_gaussians != -1]
             
-            current_assignments[participating_gaussians.long(), mask_id] = True
+            # participating_gaussians = participating_gaussians.cpu()
+            participating_gaussians = participating_gaussians[participating_gaussians >= self.pointcloud.get_points_num]
+            participating_gaussians = participating_gaussians - self.pointcloud.get_points_num
             
-            gaussians_of_one_cluster = current_assignments[:, mask_id]
-            render_new_output = self.renderer.render(check_frame, self.get_point_subset(gaussians_of_one_cluster))
+            # current_assignments = current_assignments.cpu()
+            current_assignments[participating_gaussians.cpu().long(), mask_id] = True
+            
+            gaussians_of_one_cluster = current_assignments[:, mask_id]#.cpu()
+            # render_new_output = self.renderer.render(check_frame, self.get_point_subset(gaussians_of_one_cluster))
+            mod_par = {key: stable_par[key][gaussians_of_one_cluster].cuda() for key in stable_par}
+            render_new_output = self.renderer.render(check_frame, mod_par)#self.get_point_subset(gaussians_of_one_cluster))
             
             rend_clusters[new_cluster_index] = render_new_output['render'].sum(dim=0).bool()
             
         # this is the first call to clustering function, we just 'create' the new cluster
         if torch.all(assignments == 0):
-            self.unstable_assignments = current_assignments[:num_unstable_gaussians]
-            self.stable_assignments = current_assignments[num_unstable_gaussians:]
+            # self.unstable_assignments = current_assignments[:num_unstable_gaussians]
+            # self.stable_assignments = current_assignments[num_unstable_gaussians:]
+            self.stable_assignments = current_assignments
             for mask_id in range(num_masks):
                 self.cluster_masks[mask_id] = [(frame_id, mask_id)] 
             return
@@ -1108,7 +1124,7 @@ class Mapping(object):
         num_old_clusters = assignments.size(1)
         num_new_clusters = current_assignments.size(1)
         # check which gaussians are visible
-        visible_gaussians_mask = self.renderer.get_visible_mask(check_frame, self.global_params)
+        visible_gaussians_mask = self.renderer.get_visible_mask(check_frame, stable_par)
         visible_clusters_ind = (assignments & visible_gaussians_mask.unsqueeze(1)).any(dim=0).nonzero().squeeze(dim=1)
                 
         if visible_clusters_ind.dim() != 0:
@@ -1117,11 +1133,15 @@ class Mapping(object):
         
         if visible_clusters_ind.dim() == 0:
             return
+        
+        cluster_wise_gaussian_contr = torch.zeros((visible_clusters_ind.size(0), pixel_to_gaussian_map.size(1), pixel_to_gaussian_map.size(2)), device='cuda')
         # render old cluster sils
         for i in visible_clusters_ind:
             gaussians_of_one_cluster = assignments[:, i]
-            render_new_output = self.renderer.render(check_frame, self.get_point_subset(gaussians_of_one_cluster))
-            rend_clusters[i] = render_new_output['render'].sum(dim=0).bool()
+            mod_par = {key: stable_par[key][gaussians_of_one_cluster].cuda() for key in stable_par}
+            render_new_output = self.renderer.render(check_frame, mod_par)#self.get_point_subset(gaussians_of_one_cluster))
+            rend_clusters[i.item()] = render_new_output['render'].sum(dim=0).bool()
+            cluster_wise_gaussian_contr[i.item()] = render_new_output['pixelwise_contribution'][0]
             
         # get tensors containing language features of all clusters
         # first compute language features for all clusters
@@ -1133,6 +1153,14 @@ class Mapping(object):
         # now get the rendered visible cluster 
         rend_old_visible_clusters = torch.stack([rend_clusters[i.item()] for i in visible_clusters_ind])
         rend_new_clusters = torch.stack([rend_clusters[i + num_old_clusters] for  i in range(num_masks)])
+        
+        if frame_id >= 0:
+    
+            for ind, cluster in enumerate(rend_old_visible_clusters):
+                plot_single_cluster(cluster, frame, str(ind), "debug_vis/old_cluster_")
+            
+            for i, cluster in enumerate(rend_new_clusters):
+                plot_single_cluster(cluster, frame, str(i), "debug_vis/new_cluster_")
         
         # compute similarity of cluster language features
         cossim_matrix = F.cosine_similarity(
@@ -1159,8 +1187,13 @@ class Mapping(object):
             if score_curr_new_cluster >= self.cluster_matching_threshold:
                 bool_old = rend_old_visible_clusters[matched_old_vis_cluster_ind]
                 bool_new = rend_new_clusters[i]
-                participating_old = torch.unique(pixel_to_gaussian_map[0][(bool_old.cuda() & ~bool_new.cuda())])
-                assignments[participating_old.long(),matched_old_cluster_ind] = False
+                # participating_old = torch.unique(pixel_to_gaussian_map[0][(bool_old.cuda() & ~bool_new.cuda())])
+                participating_old = torch.unique(cluster_wise_gaussian_contr[matched_old_vis_cluster_ind][(bool_old.cuda() & ~bool_new.cuda())])
+                #participating_old = participating_old[participating_old >= self.pointcloud.get_points_num]
+                #participating_old = participating_old - self.pointcloud.get_points_num
+                participating_old = participating_old[participating_old != -1]
+            
+                assignments[participating_old.cpu().long(),matched_old_cluster_ind] = False
                 assignments[:,matched_old_cluster_ind] = assignments[:,matched_old_cluster_ind] | current_assignments[:,i]
                 del rend_clusters[num_old_clusters + i]
                     
@@ -1178,8 +1211,9 @@ class Mapping(object):
             indices_of_all_unmatched = max_score_per_new_cluster < self.cluster_matching_threshold
             assignments = torch.cat([assignments, current_assignments[:,indices_of_all_unmatched]], dim=1)
             
-        self.unstable_assignments = assignments[:num_unstable_gaussians]
-        self.stable_assignments = assignments[num_unstable_gaussians:]
+        # self.unstable_assignments = assignments[:num_unstable_gaussians]
+        # self.stable_assignments = assignments[num_unstable_gaussians:]
+        self.stable_assignments = assignments
         
         if frame_id % 10 == 0:
             plot_cluster_language_association(rend_clusters, None, frame, new_clusters_created + [i.item() for i in visible_clusters_ind], out_file_prefix=f"visualization/cluster_visualization_{frame_id}")

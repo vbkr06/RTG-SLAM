@@ -8,22 +8,22 @@ import cv2
 
 
 def plot_single_cluster(rendered_features,
-                        image,
+                        camera,
                         out,
                         out_file_prefix="visualization/cluster_visualization"):
     cmap = plt.get_cmap("tab20")
-    C, H, W = rendered_features.shape
+    H, W = rendered_features.shape
     
     individual_image = torch.zeros((3, H, W), dtype=torch.float32)
 
     cluster_feat = rendered_features  # [C, H, W]
-    nonzero_mask = (cluster_feat.abs().sum(dim=0) > 0)
+    nonzero_mask = (cluster_feat.abs() > 0)
     color = cmap(0)[:3]
     color_tensor = torch.tensor(color, dtype=torch.float32)
     individual_image[:, nonzero_mask] = color_tensor.view(3, 1)
 
     # Overlay both images onto the original image
-    base_img = (image.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+    base_img = (camera.original_image.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
 
     def overlay_clusters(accum_img, base, out_filename):
         accum_np = accum_img.numpy().transpose(1, 2, 0)  # [H, W, 3]
