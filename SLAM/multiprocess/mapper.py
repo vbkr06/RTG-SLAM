@@ -93,6 +93,11 @@ class Mapping(object):
         self.feature_lr_coef = args.feature_lr_coef
         self.scaling_lr_coef = args.scaling_lr_coef
         self.rotation_lr_coef = args.rotation_lr_coef
+
+        # cluster assignments
+        self.assignments = None
+        self.stable_assignments = None
+        self.unstable_assignments = None
         
     def mapping(self, frame, frame_map, frame_id, optimization_params, sam_masks, rend_clusters, mask_lang_feat):
         self.frame_map = frame_map
@@ -139,6 +144,22 @@ class Mapping(object):
         self.temp_points_filter()
         self.temp_points_attach(frame)
         self.temp_to_optimize()
+        
+    ###
+    def add_gaussians_assignments(self, assignments, num_new):
+        if assignments is None:
+            return torch.empty(num_new, 0, dtype=torch.bool).cuda()
+        else:
+            current_cols = assignments.shape[1]
+            new_rows = torch.zeros(num_new, current_cols, dtype=torch.bool).cuda()
+            return torch.cat([assignments, new_rows], dim=0)
+    
+    ###
+    def delete_gaussians_assignments(self, assignments, indices_to_remove):
+        mask = torch.ones(assignments.shape[0], dtype=torch.bool, device=assignments.device)
+        mask[indices_to_remove] = False
+        return assignments[mask]
+
 
     def update_poses(self, new_poses):
         if new_poses is None:
@@ -280,10 +301,19 @@ class Mapping(object):
             )
             self.stable_pointcloud.cat(stable_params)
 
+            # delete unstable assignments
+            self.unstable_assignments = self.unstable_assignments[~stable_mask]
+
+            # add stable assignments
+            self.stable_assignments = self.add_gaussians_assignments(self.stable_assignments, stable_params["xyz"].shape[0])
+
+
     # Release the outlier points
     def gaussians_release(self, mask):
         if mask.sum() > 0:
             unstable_params = self.stable_pointcloud.remove(mask)
+            # delete stable assignments
+            self.stable_assignments = self.stable_assignments[~mask]
             unstable_params["confidence"] = devF(
                 torch.zeros_like(unstable_params["confidence"])
             )
@@ -291,6 +321,12 @@ class Mapping(object):
                 torch.ones_like(unstable_params["add_tick"])
             )
             self.pointcloud.cat(unstable_params)
+
+            # add unstable assignments
+            self.unstable_assignments = self.add_gaussians_assignments(self.unstable_assignments, unstable_params["xyz"].shape[0])
+
+            
+
 
     # Remove too small/big gaussians, long time unstable gaussians, insolated_gaussians
     def gaussians_delete(self, unstable=True):
@@ -331,6 +367,13 @@ class Mapping(object):
                 ),
             )
         pointcloud.delete(delete_mask)
+
+        # delete assignments
+        if unstable:
+            self.unstable_assignments = self.unstable_assignments[~delete_mask]
+        else:
+            self.stable_assignments = self.stable_assignments[~delete_mask]
+
 
     # check if current frame is a keyframe
     def check_keyframe(self, frame, frame_id):
@@ -596,7 +639,12 @@ class Mapping(object):
         # move_to_cpu(keyframe)
         # move_to_cpu_map(keymap)
         self.stable_pointcloud.delete(depth_delete_mask)
+        # delete assignments
+        self.stable_assignments = self.stable_assignments[~depth_delete_mask]
+        
         self.gaussians_release(color_release_mask[~depth_delete_mask])
+        
+        
 
     # update all stable gaussians by keyframes render
     def global_optimization(
@@ -903,6 +951,9 @@ class Mapping(object):
         temp_params = self.temp_pointcloud.remove(remove_mask)
         # print("alarm\n\n\n\n\n\n\n" + str(self.temp_pointcloud.get_points_num) + "\n\n\n\n\n\n\n")
         self.pointcloud.cat(temp_params)
+
+        # add to unstable assignments
+        self.unstable_assignments = self.add_gaussians_assignments(self.unstable_assignments, temp_params["xyz"].shape[0])
 
     # detect isolated gaussians by KNN
     def gaussians_isolated(self, points, topk=5, threshold=0.005):
