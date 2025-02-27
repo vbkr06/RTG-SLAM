@@ -100,12 +100,16 @@ class Mapping(object):
         # cluster assignments
         self.stable_assignments = None
         self.unstable_assignments = None
+        
+        self.cluster_window_size = args.cluster_window_size
+        self.cluster_frequency = args.cluster_frequency
+        self.cluster_iter = args.cluster_iter
+        self.cluster_frames_window = deque(maxlen=self.cluster_window_size)
 
-        # self.num_clusters = 0
         self.cluster_matching_threshold = 2.0
         self.cluster_masks = {}
         
-    def mapping(self, frame, frame_map, frame_id, optimization_params, sam_masks, rend_clusters, mask_lang_feat):
+    def mapping(self, frame, frame_map, frame_id, optimization_params, sam_masks, rend_clusters, mask_lang_feat, num_frames):
         self.frame_map = frame_map
         # add new gaussians to self.pointcloud
         # self.temp_pointcloud is always empty afterwards
@@ -129,7 +133,7 @@ class Mapping(object):
                     self.local_optimize(frame, optimization_params)
                 else:
                     self.global_optimization(
-                        optimization_params,
+                        optimization_params,   
                         select_keyframe_num=self.global_keyframe_num
                     )
                 self.gaussians_delete(unstable=False)
@@ -141,7 +145,19 @@ class Mapping(object):
         # delete gaussians from self.pointcloud if they are too big or if they are unstable to for too long
         self.gaussians_delete()
         
-        self.semantic_clustering(frame, frame_map, frame_id, optimization_params, sam_masks, rend_clusters, mask_lang_feat)
+        self.semantic_clustering(frame, frame_id, sam_masks, rend_clusters, mask_lang_feat) # , vis_caption="visualization_vanilla/")
+
+        # global semantic clustering
+        self.cluster_frames_window.append(frame) 
+        if frame_id % self.cluster_frequency == 0 and frame_id != 0:
+            for _ in range(self.cluster_iter):  
+                random_index = random.randint(max(0, frame_id - self.cluster_window_size), frame_id)
+                random_frame = self.cluster_frames_window[min(frame_id, self.cluster_window_size - 1) - (frame_id - random_index)]
+                vis_caption =  f"visualization_global/opt_round{(int)(frame_id / self.cluster_frequency)}_"
+                self.semantic_clustering(random_frame, random_index, sam_masks, rend_clusters, mask_lang_feat, vis_caption)
+
+               
+
         
         move_to_cpu(frame)
 
@@ -1060,7 +1076,7 @@ class Mapping(object):
         )
         self.model_map["render_transmission"] = render_output["T_map"].permute(1, 2, 0)
 
-    def semantic_clustering(self, frame, frame_map, frame_id, optimization_params, sam_masks, rend_clusters, mask_lang_feat):
+    def semantic_clustering(self, frame, frame_id, sam_masks, rend_clusters, mask_lang_feat, vis_caption="visualization/"):
         # return if no masks in the current frame --> no modifications possible
         sam_masks = sam_masks[frame_id]
         num_masks = len(sam_masks)
@@ -1083,9 +1099,8 @@ class Mapping(object):
 
         # render unstable and stable gaussians -> get pixelwise gaussians
         global_par_curr_frame = self.global_params
-        check_frame = self.processed_frames[-1]
         render_output = self.renderer.render(
-            check_frame, global_par_curr_frame
+            frame, global_par_curr_frame
         )
         pixel_to_gaussian_map = render_output["pixelwise_contribution"]
         
@@ -1113,7 +1128,7 @@ class Mapping(object):
             gaussians_of_one_cluster = current_assignments[:, mask_id]#.cpu()
             # render_new_output = self.renderer.render(check_frame, self.get_point_subset(gaussians_of_one_cluster))
             mod_par = {key: stable_par[key][gaussians_of_one_cluster].cuda() for key in stable_par}
-            render_new_output = self.renderer.render(check_frame, mod_par)#self.get_point_subset(gaussians_of_one_cluster))
+            render_new_output = self.renderer.render(frame, mod_par)#self.get_point_subset(gaussians_of_one_cluster))
             
             new_cluster_index = assignments.size(1) + len(real_new_masks) - 1
             
@@ -1133,7 +1148,7 @@ class Mapping(object):
         num_old_clusters = assignments.size(1)
         num_new_clusters = len(real_new_masks)#current_assignments.size(1)
         # check which gaussians are visible
-        visible_gaussians_mask = self.renderer.get_visible_mask(check_frame, stable_par)
+        visible_gaussians_mask = self.renderer.get_visible_mask(frame, stable_par)
         visible_clusters_ind = (assignments & visible_gaussians_mask.unsqueeze(1)).any(dim=0).nonzero().squeeze(dim=1)
                 
         if visible_clusters_ind.dim() != 0:
@@ -1148,7 +1163,7 @@ class Mapping(object):
         for ind, i in enumerate(visible_clusters_ind):
             gaussians_of_one_cluster = assignments[:, i]
             mod_par = {key: stable_par[key][gaussians_of_one_cluster].cuda() for key in stable_par}
-            render_new_output = self.renderer.render(check_frame, mod_par)#self.get_point_subset(gaussians_of_one_cluster))
+            render_new_output = self.renderer.render(frame, mod_par)#self.get_point_subset(gaussians_of_one_cluster))
             rend_clusters[i.item()] = render_new_output['render'].sum(dim=0).bool()
             cluster_wise_gaussian_contr[ind] = render_new_output['pixelwise_contribution'][0]
             
@@ -1224,8 +1239,8 @@ class Mapping(object):
         # self.stable_assignments = assignments[num_unstable_gaussians:]
         self.stable_assignments = assignments
         
-        if frame_id % 10 == 0:
-            plot_cluster_language_association(rend_clusters, None, frame, new_clusters_created + [i.item() for i in visible_clusters_ind], out_file_prefix=f"visualization/cluster_visualization_{frame_id}")
+        if frame_id % 10 == 0 or vis_caption:
+            plot_cluster_language_association(rend_clusters, None, frame, new_clusters_created + [i.item() for i in visible_clusters_ind], out_file_prefix=f"{vis_caption}cluster_frame{frame_id}")
         
         torch.cuda.empty_cache()
 

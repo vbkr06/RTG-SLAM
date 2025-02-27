@@ -14,3 +14,5 @@ simple-knn
 *.txt
 build
 lib
+debug*
+visualization*

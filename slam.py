@@ -26,7 +26,6 @@ from SLAM.utils import *
 from SLAM.eval import eval_frame
 from utils.general_utils import safe_state
 from utils.monitor import Recorder
-from clustering.gaussians_clustering import GaussiansClustering
 
 
 torch.set_printoptions(4, sci_mode=False)
@@ -65,11 +64,11 @@ def main():
     num_frames = len(dataset.scene_info.train_cameras)
     preprocess_path = dataset_params.source_path + "/sam_grounded_masks"
     mask_language_features = {}
-    gaussians_clustering = GaussiansClustering(args)
     sam_masks = {}
     rendered_cluster_features = {}
     mask_score_threshold = 0.95
-    for time_idx in range(500):
+    # num_frames = 500
+    for time_idx in range(num_frames):
         npz_data = np.load(f"{preprocess_path}/{time_idx}_groundedsam.npz")
         mask_scores = torch.from_numpy(npz_data['mask_scores'])
         if mask_scores.size(0) > 0:
@@ -103,12 +102,7 @@ def main():
         new_poses = gaussian_tracker.get_new_poses()
         gaussian_map.update_poses(new_poses)
         # mapper process
-        gaussian_map.mapping(curr_frame, frame_map, frame_id, optimization_params, sam_masks, rendered_cluster_features, mask_language_features)
-
-        # clustering
-        # with torch.no_grad():
-        #     gaussians_clustering.update_gaussian_clusters(optimization_params, curr_frame, frame_id, sam_masks, mask_language_features, rendered_cluster_features)          
-        
+        gaussian_map.mapping(curr_frame, frame_map, frame_id, optimization_params, sam_masks, rendered_cluster_features, mask_language_features, num_frames)
 
         gaussian_map.get_render_output(curr_frame)
         gaussian_tracker.update_last_status(

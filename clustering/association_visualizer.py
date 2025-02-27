@@ -81,7 +81,7 @@ def plot_cluster_language_association(
     # Output paths
     os.makedirs(os.path.dirname(out_file_prefix), exist_ok=True)
     grouped_out_file = f"{out_file_prefix}_grouped.png"
-    individual_out_file = f"{out_file_prefix}_individual.png"
+    individual_out_file = f"{out_file_prefix}.png"
 
     # overlay_clusters(grouped_image, base_img, grouped_out_file)
     overlay_clusters(individual_image, base_img, individual_out_file)
