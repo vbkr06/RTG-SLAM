@@ -1,4 +1,5 @@
 import os
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 from argparse import ArgumentParser
 
 from utils.config_utils import read_config
@@ -68,7 +69,7 @@ def main():
     sam_masks = {}
     rendered_cluster_features = {}
     mask_score_threshold = 0.95
-    for time_idx in range(num_frames):
+    for time_idx in range(500):
         npz_data = np.load(f"{preprocess_path}/{time_idx}_groundedsam.npz")
         mask_scores = torch.from_numpy(npz_data['mask_scores'])
         if mask_scores.size(0) > 0:

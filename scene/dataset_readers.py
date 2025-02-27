@@ -790,7 +790,7 @@ def readReplicaSceneInfo(
 
     color_paths = sorted(glob.glob(f"{datapath}/results/frame*.jpg"))
     depth_paths = sorted(glob.glob(f"{datapath}/results/depth*.png"))
-    n_img = len(color_paths)
+    n_img = 500#len(color_paths)
     timestamps = [i / 30.0 for i in range(n_img)]
 
     poses = load_poses(f"{datapath}/traj.txt", n_img)
