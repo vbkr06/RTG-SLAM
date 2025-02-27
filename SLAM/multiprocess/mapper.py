@@ -18,6 +18,8 @@ from utils.general_utils import calculate_iou
 from clustering.association_visualizer import plot_cluster_language_association, plot_single_cluster
 import torch.nn.functional as F
 
+from evaluation.color_objects import save_colored_objects_ply
+
 class Mapping(object):
     def __init__(self, args, recorder=None) -> None:
         self.temp_pointcloud = GaussianPointCloud(args)
@@ -145,7 +147,9 @@ class Mapping(object):
         # delete gaussians from self.pointcloud if they are too big or if they are unstable to for too long
         self.gaussians_delete()
         
-        self.semantic_clustering(frame, frame_id, sam_masks, rend_clusters, mask_lang_feat) # , vis_caption="visualization_vanilla/")
+        run_desc = f"window{self.cluster_window_size}_every{self.cluster_frequency}_iter{self.cluster_iter}"
+
+        self.semantic_clustering(frame, frame_id, sam_masks, rend_clusters, mask_lang_feat, vis_caption=f"visualization/{run_desc}/")
 
         # global semantic clustering
         self.cluster_frames_window.append(frame) 
@@ -153,13 +157,18 @@ class Mapping(object):
             for _ in range(self.cluster_iter):  
                 random_index = random.randint(max(0, frame_id - self.cluster_window_size), frame_id)
                 random_frame = self.cluster_frames_window[min(frame_id, self.cluster_window_size - 1) - (frame_id - random_index)]
-                vis_caption =  f"visualization_global/opt_round{(int)(frame_id / self.cluster_frequency)}_"
+                vis_caption =  f"visualization/{run_desc}/visualization_global/opt_round{(int)(frame_id / self.cluster_frequency)}_"
                 self.semantic_clustering(random_frame, random_index, sam_masks, rend_clusters, mask_lang_feat, vis_caption)
-
-               
-
         
+        if frame_id % 100 == 0 and frame_id != 0:            
+            save_colored_objects_ply(
+                torch.cat([self.unstable_params["xyz"], self.stable_params["xyz"]]), 
+                self.stable_assignments,
+                self.cluster_masks,
+                mask_lang_feat)
+
         move_to_cpu(frame)
+
 
     def gaussians_add(self, frame):
         self.temp_points_init(frame)

@@ -15,6 +15,7 @@ scipy
 opencv-python
 matplotlib
 GPUtil
+git+https://github.com/openai/CLIP.git
 -e submodules/cuda_utils
 -e submodules/diff-gaussian-rasterizer-depth
 -e submodules/simple-knn

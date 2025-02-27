@@ -42,5 +42,5 @@ pcd_densify: True
 
 # cluster params
 cluster_window_size: 50
-cluster_frequency: 20
-cluster_iter: 10
+cluster_frequency: 30
+cluster_iter: 15
