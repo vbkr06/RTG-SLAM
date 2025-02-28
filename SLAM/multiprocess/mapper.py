@@ -160,7 +160,7 @@ class Mapping(object):
                 vis_caption =  f"visualization/{run_desc}/visualization_global/opt_round{(int)(frame_id / self.cluster_frequency)}_"
                 self.semantic_clustering(random_frame, random_index, sam_masks, rend_clusters, mask_lang_feat, vis_caption)
         
-        if frame_id % 100 == 0 and frame_id != 0:            
+        if frame_id % 500 == 0 and frame_id != 0:            
             save_colored_objects_ply(
                 torch.cat([self.unstable_params["xyz"], self.stable_params["xyz"]]), 
                 self.stable_assignments,
@@ -1142,6 +1142,9 @@ class Mapping(object):
             new_cluster_index = assignments.size(1) + len(real_new_masks) - 1
             
             rend_clusters[new_cluster_index] = render_new_output['render'].sum(dim=0).bool()
+        
+        if not real_new_masks:
+            return
             
         current_assignments = current_assignments[:,real_new_masks]    
         
@@ -1151,7 +1154,7 @@ class Mapping(object):
             # self.stable_assignments = current_assignments[num_unstable_gaussians:]
             self.stable_assignments = current_assignments
             for mask_id in real_new_masks:
-                self.cluster_masks[mask_id] = [(frame_id, mask_id)] 
+                self.cluster_masks.setdefault(mask_id, []).append((frame_id, mask_id))
             return
         
         num_old_clusters = assignments.size(1)
@@ -1238,8 +1241,8 @@ class Mapping(object):
                 new_clusters_created.append(new_cluster_id)
                 rend_clusters[new_cluster_id] = rend_clusters.pop(num_old_clusters + i)
                 # save masks
-                self.cluster_masks[new_cluster_id] = [(frame_id, real_new_masks[i])]
-        
+                self.cluster_masks.setdefault(new_cluster_id, []).append((frame_id, i))
+
         if len(new_clusters_created):
             indices_of_all_unmatched = max_score_per_new_cluster < self.cluster_matching_threshold
             assignments = torch.cat([assignments, current_assignments[:,indices_of_all_unmatched]], dim=1)
@@ -1248,7 +1251,7 @@ class Mapping(object):
         # self.stable_assignments = assignments[num_unstable_gaussians:]
         self.stable_assignments = assignments
         
-        if frame_id % 10 == 0 or vis_caption:
+        if frame_id % 20 == 0 or vis_caption:
             plot_cluster_language_association(rend_clusters, None, frame, new_clusters_created + [i.item() for i in visible_clusters_ind], out_file_prefix=f"{vis_caption}cluster_frame{frame_id}")
         
         torch.cuda.empty_cache()

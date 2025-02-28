@@ -201,47 +201,47 @@ OVOSLAM_COLORED_LABELS = [
 ]
 
 LABEL_TO_COLOR = {
-    "panel":       (220, 20, 60),    # crimson
-    "vase":        (255, 127, 0),    # orange
-    "clock":       (255, 215, 0),    # gold
-    "pot":         (0, 128, 0),      # green
-    "window":      (0, 191, 255),    # deep sky blue
-    "bottle":      (106, 90, 205),   # slate blue
-    "indoor-plant":(34, 139, 34),    # forest green
-    "pillow":      (255, 192, 203),  # pink
-    "blinds":      (0, 255, 255),    # cyan
-    "lamp":        (255, 0, 255),    # magenta
-    "pillar":      (139, 69, 19),    # saddle brown
-    "wall-plug":   (128, 0, 0),      # maroon
-    "wall":        (128, 128, 128),  # gray
-    "cushion":     (173, 216, 230),  # light blue
-    "switch":      (210, 105, 30),   # chocolate
-    "picture":     (244, 164, 96),   # sandy brown
-    "bench":       (128, 128, 0),    # olive
-    "box":         (154, 205, 50),   # yellow green
-    "shelf":       (0, 100, 0),      # dark green
-    "stool":       (70, 130, 180),   # steel blue
-    "book":        (230, 230, 250),  # lavender
-    "cloth":       (255, 160, 122),  # light salmon
-    "rug":         (255, 228, 196),  # bisque
-    "table":       (255, 69, 0),     # orange red
-    "monitor":     (138, 43, 226),   # blue violet
-    "ceiling":     (127, 255, 212),  # aquamarine
-    "bowl":        (255, 140, 0),    # dark orange
-    "camera":      (128, 0, 128),    # purple
-    "basket":      (255, 99, 71),    # tomato
-    "nightstand":  (165, 42, 42),    # brown
-    "blanket":     (221, 160, 221),  # plum
-    "door":        (139, 0, 0),      # dark red
-    "bed":         (184, 134, 11),   # dark goldenrod
-    "comforter":   (0, 128, 128),    # teal
-    "plate":       (152, 251, 152),  # pale green
-    "chair":       (178, 34, 34),    # firebrick
-    "vent":        (112, 128, 144),  # slate gray
-    "bin":         (0, 139, 139),    # dark cyan
-    "desk":        (160, 82, 45),    # sienna
-    "floor":       (188, 143, 143),  # rosy brown
-    "cabinet":     (139, 0, 139),    # dark magenta
-    "sculpture":   (218, 112, 214),  # orchid
-    "tv-screen":   (199, 21, 133),   # medium violet red
+    "panel":       (150,53,56),   
+    "vase":        (143,45,115),  
+    "clock":       (154,59,103),   
+    "pot":         (208,49,84),    
+    "window":      (229,91,104),  
+    "bottle":      (237,80,38), 
+    "indoor-plant":(255,127,14), 
+    "pillow":      (255,187,120),  
+    "blinds":      (255,152,150),    
+    "lamp":        (247,182,210),   
+    "pillar":      (197,176,213),   
+    "wall-plug":   (227,119,194),      
+    "wall":        (196,51,182),  
+    "cushion":     (229,91,223),  
+    "switch":      (190,77,246),   
+    "picture":     (177,82,239),  
+    "bench":       (141,91,229),    
+    "box":         (120,31,243),   
+    "shelf":       (34,14,130),      
+    "stool":       (58,98,137),   
+    "book":        (38,100,128),  
+    "cloth":       (38,96,167),  
+    "rug":         (31,119,180),  
+    "table":       (91,135,229),     
+    "monitor":     (90,119,201),  
+    "ceiling":     (174,199,232),  
+    "bowl":        (158,218,229),   
+    "camera":      (37,230,205),    
+    "basket":      (23,190,207),    
+    "nightstand":  (62,143,148),    
+    "blanket":     (44,160,44), 
+    "door":        (91,229,110),     
+    "bed":         (88,218,137),   
+    "comforter":   (41,206,32),    
+    "plate":       (16,212,139),  
+    "chair":       (152,223,138),   
+    "vent":        (192,229,91),  
+    "bin":         (219,219,141),    
+    "desk":        (237,204,37),    
+    "floor":       (188,189,34), 
+    "cabinet":     (196,156,148),   
+    "sculpture":   (196,156,148),  
+    "tv-screen":   (112,128,144),  
 }
