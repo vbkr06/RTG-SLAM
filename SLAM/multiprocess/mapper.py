@@ -160,9 +160,11 @@ class Mapping(object):
                 vis_caption =  f"visualization/{run_desc}/visualization_global/opt_round{(int)(frame_id / self.cluster_frequency)}_"
                 self.semantic_clustering(random_frame, random_index, sam_masks, rend_clusters, mask_lang_feat, vis_caption)
         
-        if frame_id % 500 == 0 and frame_id != 0:            
+        if frame_id % 200 == 0 and frame_id != 0:            
             save_colored_objects_ply(
-                torch.cat([self.unstable_params["xyz"], self.stable_params["xyz"]]), 
+                frame_id,
+                # torch.cat([self.unstable_params["xyz"], self.stable_params["xyz"]]),
+                self.stable_params["xyz"],
                 self.stable_assignments,
                 self.cluster_masks,
                 mask_lang_feat)
@@ -1262,11 +1264,16 @@ class Mapping(object):
         
         cluster_lang_features = torch.zeros((num_clusters, 512), device = 'cuda')
         
-        for cluster_idx, all_mask_infos in self.cluster_masks.items():
+        max_samples = 100 
 
-            all_features_curr_cluster = torch.zeros((len(all_mask_infos), 512), device = 'cuda')
+        for cluster_idx, all_mask_infos in self.cluster_masks.items():
+            num_masks = len(all_mask_infos)
             
-            for i, (mask_time_idx, mask_index) in enumerate(all_mask_infos):
+            sampled_masks = random.sample(all_mask_infos, min(max_samples, num_masks))
+
+            all_features_curr_cluster = torch.zeros((len(sampled_masks), 512), device='cuda')
+
+            for i, (mask_time_idx, mask_index) in enumerate(sampled_masks):
                 all_features_curr_cluster[i] = mask_language_features[mask_time_idx][mask_index]
                 
             similarity_matrix = F.cosine_similarity(all_features_curr_cluster.unsqueeze(1), all_features_curr_cluster.unsqueeze(0), dim=-1)
