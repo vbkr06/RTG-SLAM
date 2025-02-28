@@ -245,3 +245,17 @@ LABEL_TO_COLOR = {
     "sculpture":   (196,156,148),  
     "tv-screen":   (112,128,144),  
 }
+
+
+NYU40 = {
+    0:  "unlabeled",  1:  "wall", 2:  "floor", 3:  "cabinet", 4:  "bed",
+    5:  "chair",      6:  "sofa", 7:  "table", 8:  "door",    9:  "window",
+    10: "bookshelf",  11: "picture", 12: "counter", 13: "blinds", 14: "desk",
+    15: "shelves",    16: "curtain", 17: "dresser", 18: "pillow", 19: "mirror",
+    20: "floormat",   21: "clothes", 22: "ceiling", 23: "books",  24: "refrigerator",
+    25: "television", 26: "paper",  27: "towel",   28: "showercurtain", 29: "box",
+    30: "whiteboard", 31: "person", 32: "nightstand", 33: "toilet", 34: "sink",
+    35: "lamp",       36: "bathtub", 37: "bag",    38: "otherstructure", 39: "otherfurniture", 40: "otherprop"
+}
+
+NYU20_INDICES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 24, 28, 33, 34, 36, 39]

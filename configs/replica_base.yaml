@@ -40,7 +40,3 @@ rotation_lr_coef: 4.0
 
 pcd_densify: True
 
-# cluster params
-cluster_window_size: 50
-cluster_frequency: 30
-cluster_iter: 15

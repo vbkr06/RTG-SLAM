@@ -9,7 +9,7 @@ max_depth: 10.0
 
 # dataset params:
 type: "Scannetpp"
-source_path: "data/ScanNetpp/8b5caf3398"
+source_path: "data/ScanNetpp/scene0050_00"
 
 # state manage
 stable_confidence_thres: 400

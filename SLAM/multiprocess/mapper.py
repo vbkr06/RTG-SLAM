@@ -18,7 +18,7 @@ from utils.general_utils import calculate_iou
 from clustering.association_visualizer import plot_cluster_language_association, plot_single_cluster
 import torch.nn.functional as F
 
-from evaluation.color_objects import save_colored_objects_ply
+from evaluation.color_objects import save_colored_objects_ply_simple
 
 class Mapping(object):
     def __init__(self, args, recorder=None) -> None:
@@ -161,9 +161,14 @@ class Mapping(object):
                 self.semantic_clustering(random_frame, random_index, sam_masks, rend_clusters, mask_lang_feat, vis_caption)
         
         if frame_id % 200 == 0 and frame_id != 0:            
-            save_colored_objects_ply(
+            # save_colored_objects_ply(
+            #     frame_id,
+            #     self.stable_params["xyz"],
+            #     self.stable_assignments,
+            #     self.cluster_masks,
+            #     mask_lang_feat)
+            save_colored_objects_ply_simple(
                 frame_id,
-                # torch.cat([self.unstable_params["xyz"], self.stable_params["xyz"]]),
                 self.stable_params["xyz"],
                 self.stable_assignments,
                 self.cluster_masks,

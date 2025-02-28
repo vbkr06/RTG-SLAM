@@ -121,3 +121,8 @@ tracker_max_fps: 30
 # evaluate
 renderer_opaque_threshold_eval: 0.5
 pcd_densify: False
+
+# cluster params
+cluster_window_size: 50
+cluster_frequency: 30
+cluster_iter: 15
