@@ -62,7 +62,7 @@ def main():
     mapper_time_sum = 0
 
     num_frames = len(dataset.scene_info.train_cameras)
-    preprocess_path = dataset_params.source_path + "/sam_grounded_masks"
+    preprocess_path = f"{dataset_params.source_path}/{args.sam_masks_path}" #+ "/sam_grounded_masks"
     mask_language_features = {}
     sam_masks = {}
     rendered_cluster_features = {}

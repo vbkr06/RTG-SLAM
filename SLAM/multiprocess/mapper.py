@@ -147,20 +147,20 @@ class Mapping(object):
         # delete gaussians from self.pointcloud if they are too big or if they are unstable to for too long
         self.gaussians_delete()
         
-        run_desc = f"window{self.cluster_window_size}_every{self.cluster_frequency}_iter{self.cluster_iter}"
+        run_desc = f"no_outliers_window{self.cluster_window_size}_every{self.cluster_frequency}_iter{self.cluster_iter}"
 
         self.semantic_clustering(frame, frame_id, sam_masks, rend_clusters, mask_lang_feat, vis_caption=f"visualization/{run_desc}/")
 
         # global semantic clustering
-        self.cluster_frames_window.append(frame) 
-        if frame_id % self.cluster_frequency == 0 and frame_id != 0:
-            for _ in range(self.cluster_iter):  
-                random_index = random.randint(max(0, frame_id - self.cluster_window_size), frame_id)
-                random_frame = self.cluster_frames_window[min(frame_id, self.cluster_window_size - 1) - (frame_id - random_index)]
-                vis_caption =  f"visualization/{run_desc}/visualization_global/opt_round{(int)(frame_id / self.cluster_frequency)}_"
-                self.semantic_clustering(random_frame, random_index, sam_masks, rend_clusters, mask_lang_feat, vis_caption)
+        # self.cluster_frames_window.append(frame) 
+        # if frame_id % self.cluster_frequency == 0 and frame_id != 0:
+        #     for _ in range(self.cluster_iter):  
+        #         random_index = random.randint(max(0, frame_id - self.cluster_window_size), frame_id)
+        #         random_frame = self.cluster_frames_window[min(frame_id, self.cluster_window_size - 1) - (frame_id - random_index)]
+        #         vis_caption =  f"visualization/{run_desc}/visualization_global/opt_round{(int)(frame_id / self.cluster_frequency)}_"
+        #         self.semantic_clustering(random_frame, random_index, sam_masks, rend_clusters, mask_lang_feat, vis_caption)
         
-        if frame_id % 200 == 0 and frame_id != 0:            
+        if (frame_id % 500 == 0 or frame_id == num_frames - 1) and frame_id != 0:            
             # save_colored_objects_ply(
             #     frame_id,
             #     self.stable_params["xyz"],
@@ -1115,23 +1115,23 @@ class Mapping(object):
 
         # render unstable and stable gaussians -> get pixelwise gaussians
         global_par_curr_frame = self.global_params
+        stable_par = {key: global_par_curr_frame[key][self.pointcloud.get_points_num:] for key in global_par_curr_frame}
         render_output = self.renderer.render(
-            frame, global_par_curr_frame
+            frame, stable_par
         )
         pixel_to_gaussian_map = render_output["pixelwise_contribution"]
         
-        stable_par = {key: global_par_curr_frame[key][self.pointcloud.get_points_num:] for key in global_par_curr_frame}
             
         real_new_masks = []
         # render the clustered gaussians (clustered by the current masks)
         for mask_id in range(num_masks):
             
             participating_gaussians = torch.unique(pixel_to_gaussian_map[0][sam_masks[mask_id].cuda()])
-            participating_gaussians = participating_gaussians[participating_gaussians != -1]
+            #participating_gaussians = participating_gaussians[participating_gaussians != -1]
             
             # participating_gaussians = participating_gaussians.cpu()
-            participating_gaussians = participating_gaussians[participating_gaussians >= self.pointcloud.get_points_num]
-            participating_gaussians = participating_gaussians - self.pointcloud.get_points_num
+            participating_gaussians = participating_gaussians[participating_gaussians >= 0]
+            #participating_gaussians = participating_gaussians - self.pointcloud.get_points_num
             
             if participating_gaussians.size(0) == 0:
                 continue
