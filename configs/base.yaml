@@ -127,4 +127,4 @@ cluster_window_size: 50
 cluster_frequency: 30
 cluster_iter: 15
 
-sam_masks_path: "sam_grounded_masks_no_outliers"
+sam_masks_path: "sam_grounded_masks_clip_attention"
