@@ -107,6 +107,7 @@ class Mapping(object):
         self.cluster_frequency = args.cluster_frequency
         self.cluster_iter = args.cluster_iter
         self.cluster_frames_window = deque(maxlen=self.cluster_window_size)
+        self.cluster_maps_windwos = deque(maxlen=self.cluster_window_size)
 
         self.cluster_matching_threshold = 2.0
         self.cluster_masks = {}
@@ -149,16 +150,19 @@ class Mapping(object):
         
         run_desc = f"no_outliers_window{self.cluster_window_size}_every{self.cluster_frequency}_iter{self.cluster_iter}"
 
-        self.semantic_clustering(frame, frame_id, sam_masks, rend_clusters, mask_lang_feat, vis_caption=f"visualization/{run_desc}/")
+        self.semantic_clustering(frame, frame_id, frame_map, sam_masks, rend_clusters, mask_lang_feat, vis_caption=f"visualization/{run_desc}/")
 
         # global semantic clustering
-        # self.cluster_frames_window.append(frame) 
+        self.cluster_frames_window.append(frame)
+        self.cluster_maps_windwos.append(frame_map) 
+        # self.processed_map
         # if frame_id % self.cluster_frequency == 0 and frame_id != 0:
         #     for _ in range(self.cluster_iter):  
         #         random_index = random.randint(max(0, frame_id - self.cluster_window_size), frame_id)
         #         random_frame = self.cluster_frames_window[min(frame_id, self.cluster_window_size - 1) - (frame_id - random_index)]
+        #         random_frame_map = self.cluster_maps_windwos[min(frame_id, self.cluster_window_size - 1) - (frame_id - random_index)]
         #         vis_caption =  f"visualization/{run_desc}/visualization_global/opt_round{(int)(frame_id / self.cluster_frequency)}_"
-        #         self.semantic_clustering(random_frame, random_index, sam_masks, rend_clusters, mask_lang_feat, vis_caption)
+        #         self.semantic_clustering(random_frame, random_index, random_frame_map, sam_masks, rend_clusters, mask_lang_feat, vis_caption)
         
         if (frame_id % 500 == 0 or frame_id == num_frames - 1) and frame_id != 0:            
             # save_colored_objects_ply(
@@ -1092,7 +1096,7 @@ class Mapping(object):
         )
         self.model_map["render_transmission"] = render_output["T_map"].permute(1, 2, 0)
 
-    def semantic_clustering(self, frame, frame_id, sam_masks, rend_clusters, mask_lang_feat, vis_caption="visualization/"):
+    def semantic_clustering(self, frame, frame_id, frame_map, sam_masks, rend_clusters, mask_lang_feat, vis_caption="visualization/"):
         # return if no masks in the current frame --> no modifications possible
         sam_masks = sam_masks[frame_id]
         num_masks = len(sam_masks)
@@ -1120,8 +1124,15 @@ class Mapping(object):
             frame, stable_par
         )
         pixel_to_gaussian_map = render_output["pixelwise_contribution"]
+        total_rend_depth = render_output['depth'][0]
+        total_gt_depth = frame_map['depth_map'][:,:,0].clone()
+        total_gt_depth[(render_output['depth'][0] == 0)] = 0
         
+        total_depth_distance = (total_gt_depth - total_rend_depth).abs()
+        total_depth_distance[total_depth_distance < 0.5] = 0
             
+        # pixel_to_gaussian_map[0][total_depth_distance.bool()] = -1# = pixel_to_gaussian_map * ~total_depth_distance.bool()    
+        
         real_new_masks = []
         # render the clustered gaussians (clustered by the current masks)
         for mask_id in range(num_masks):
@@ -1148,7 +1159,18 @@ class Mapping(object):
             
             new_cluster_index = assignments.size(1) + len(real_new_masks) - 1
             
+            new_rend_depth = render_new_output['depth'][0]
+            new_gt_depth = frame_map['depth_map'][:,:,0].clone()
+            new_gt_depth[(render_new_output['depth'][0] == 0)] = 0
+            
+            depth_distance_new = (new_gt_depth - new_rend_depth).abs()
+            
+            
             rend_clusters[new_cluster_index] = render_new_output['render'].sum(dim=0).bool()
+        
+        edge_gaussians = torch.unique(pixel_to_gaussian_map[0][total_depth_distance.bool()])
+        current_assignments[edge_gaussians.cpu().long(),:] = False
+        assignments[edge_gaussians.cpu().long(),:] = False
         
         if not real_new_masks:
             return
@@ -1178,6 +1200,7 @@ class Mapping(object):
             return
         
         cluster_wise_gaussian_contr = torch.zeros((visible_clusters_ind.size(0), pixel_to_gaussian_map.size(1), pixel_to_gaussian_map.size(2)), device='cuda')
+        cluster_wise_gaussian_mapping = {}
         # render old cluster sils
         for ind, i in enumerate(visible_clusters_ind):
             gaussians_of_one_cluster = assignments[:, i]
@@ -1185,6 +1208,7 @@ class Mapping(object):
             render_new_output = self.renderer.render(frame, mod_par)#self.get_point_subset(gaussians_of_one_cluster))
             rend_clusters[i.item()] = render_new_output['render'].sum(dim=0).bool()
             cluster_wise_gaussian_contr[ind] = render_new_output['pixelwise_contribution'][0]
+            cluster_wise_gaussian_mapping[ind] = torch.where(assignments[:,i])[0]
             
         # get tensors containing language features of all clusters
         # first compute language features for all clusters
@@ -1197,13 +1221,13 @@ class Mapping(object):
         rend_old_visible_clusters = torch.stack([rend_clusters[i.item()] for i in visible_clusters_ind])
         rend_new_clusters = torch.stack([rend_clusters[(i + num_old_clusters)] for  i in range(len(real_new_masks))])
         
-        # if frame_id >= 0:
+        if frame_id >= 100:
     
-        #     for ind, cluster in enumerate(rend_old_visible_clusters):
-        #         plot_single_cluster(cluster, frame, str(ind), "debug_vis/old_cluster_")
+            for ind, cluster in enumerate(rend_old_visible_clusters):
+                plot_single_cluster(cluster, frame, str(ind), "debug_vis/old_cluster_")
             
-        #     for i, cluster in enumerate(rend_new_clusters):
-        #         plot_single_cluster(cluster, frame, str(i), "debug_vis/new_cluster_")
+            for i, cluster in enumerate(rend_new_clusters):
+                plot_single_cluster(cluster, frame, str(i), "debug_vis/new_cluster_")
         
         # compute similarity of cluster language features
         cossim_matrix = F.cosine_similarity(
@@ -1236,8 +1260,9 @@ class Mapping(object):
                 #participating_old = participating_old - self.pointcloud.get_points_num
                 participating_old = participating_old[participating_old != -1]
             
-                assignments[participating_old.cpu().long(),matched_old_cluster_ind] = False
                 assignments[:,matched_old_cluster_ind] = assignments[:,matched_old_cluster_ind] | current_assignments[:,i]
+                # assignments[participating_old.cpu().long(),matched_old_cluster_ind] = False
+                assignments[cluster_wise_gaussian_mapping[matched_old_cluster_ind.item()][participating_old.cpu().long()],matched_old_cluster_ind] = False
                 del rend_clusters[num_old_clusters + i]
                     
                 # add mask
