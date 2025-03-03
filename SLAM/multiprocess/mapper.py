@@ -1132,9 +1132,9 @@ class Mapping(object):
         total_depth_distance = (total_gt_depth - total_rend_depth).abs()
         total_depth_distance[total_depth_distance < 0.5] = 0
             
-        plt.figure(figsize=(6,6))
-        plt.imshow(total_depth_distance.cpu().numpy(), cmap='hot', interpolation='none')
-        plt.savefig(f"depth_vis/depth_error_{frame_id}", dpi=300, bbox_inches='tight')
+        # plt.figure(figsize=(6,6))
+        # plt.imshow(total_depth_distance.cpu().numpy(), cmap='hot', interpolation='none')
+        # plt.savefig(f"depth_vis/depth_error_{frame_id}", dpi=300, bbox_inches='tight')
         
         
         # pixel_to_gaussian_map[0][total_depth_distance.bool()] = -1# = pixel_to_gaussian_map * ~total_depth_distance.bool()    
@@ -1175,8 +1175,8 @@ class Mapping(object):
             rend_clusters[new_cluster_index] = render_new_output['render'].sum(dim=0).bool()
         
         edge_gaussians = torch.unique(pixel_to_gaussian_map[0][total_depth_distance.bool()])
-        current_assignments[edge_gaussians.cpu().long(),:] = False
-        assignments[edge_gaussians.cpu().long(),:] = False
+        # current_assignments[edge_gaussians.cpu().long(),:] = False
+        # assignments[edge_gaussians.cpu().long(),:] = False
         
         if not real_new_masks:
             return
@@ -1244,6 +1244,10 @@ class Mapping(object):
         # compute ious between rendered cluster areas
         iou_matrix = calculate_iou(rend_old_visible_clusters, rend_new_clusters)
         
+        intersection_matrix_b = (assignments.unsqueeze(2) & current_assignments.unsqueeze(1)).sum(dim=0)
+        union_matrix_b = (assignments.unsqueeze(2) | current_assignments.unsqueeze(1)).sum(dim=0)
+        iou3d_matrix_b = (intersection_matrix_b / (union_matrix_b + 1e-8)).T
+        
         # get combined similarity matrix
         combined_matrix = 2 * cossim_matrix + iou_matrix.cuda()
         # get best matching old cluster for each new cluster/mask
@@ -1282,8 +1286,8 @@ class Mapping(object):
                 self.cluster_masks.setdefault(new_cluster_id, []).append((frame_id, i))
 
         # edge_gaussians = torch.unique(pixel_to_gaussian_map[0][total_depth_distance.bool()])
-        # current_assignments[edge_gaussians.cpu().long(),:] = False
-        # assignments[edge_gaussians.cpu().long(),:] = False
+        current_assignments[edge_gaussians.cpu().long(),:] = False
+        assignments[edge_gaussians.cpu().long(),:] = False
 
         if len(new_clusters_created):
             indices_of_all_unmatched = max_score_per_new_cluster < self.cluster_matching_threshold
