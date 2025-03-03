@@ -1263,6 +1263,7 @@ class Mapping(object):
             
             if score_curr_new_cluster >= self.cluster_matching_threshold:
                 bool_old = rend_old_visible_clusters[matched_old_vis_cluster_ind]
+                bool_old = bool_old & (pixel_to_gaussian_map[0] == cluster_wise_gaussian_mapping[matched_old_vis_cluster_ind.item()][cluster_wise_gaussian_contr[matched_old_vis_cluster_ind].cpu().long()])
                 bool_new = rend_new_clusters[i]
                 # participating_old = torch.unique(pixel_to_gaussian_map[0][(bool_old.cuda() & ~bool_new.cuda())])
                 participating_old = torch.unique(cluster_wise_gaussian_contr[matched_old_vis_cluster_ind][(bool_old.cuda() & ~bool_new.cuda())]).cpu()
