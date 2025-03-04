@@ -166,7 +166,7 @@ class Mapping(object):
         #         vis_caption =  f"visualization/{run_desc}/visualization_global/opt_round{(int)(frame_id / self.cluster_frequency)}_"
         #         self.semantic_clustering(random_frame, random_index, random_frame_map, sam_masks, rend_clusters, mask_lang_feat, vis_caption)
         
-        if (frame_id % 500 == 0 or frame_id == num_frames - 1) and frame_id != 0:            
+        if (frame_id % 1000 == 0 or frame_id == num_frames - 1) and frame_id != 0:            
             save_colored_objects_ply_simple(
                 frame_id,
                 self.stable_params["xyz"],
@@ -1032,6 +1032,31 @@ class Mapping(object):
             self.tb_writer = SummaryWriter(self.save_path)
         else:
             self.tb_writer = None
+    
+    def get_oneD_assignments(self):
+        num_gaussians, num_clusters = self.stable_assignments.shape
+        gaussian_to_cluster = torch.full((num_gaussians,), -1, dtype=torch.int64, device=self.stable_assignments.device)
+
+        for c in range(num_clusters):
+            cluster_indices = torch.nonzero(self.stable_assignments[:, c], as_tuple=True)[0] 
+            gaussian_to_cluster[cluster_indices] = c  
+
+        return gaussian_to_cluster
+
+    # def save_model_oneD_assignments(self, path=None):
+    #     if path == None:
+    #         file_name = "model_oneD_assignments.ply"
+    #         model_save_path = os.path.join(self.save_path, "save_model", file_name)
+    #         os.makedirs(model_save_path, exist_ok=True)
+    #         path = os.path.join(model_save_path, file_name)       
+    #     # save global xyz
+    #     xyz = self.stable_params["xyz"]
+    #     num_gaussians = xyz.shape[0]
+        
+    #     for c in range(self.stable_assignments.shape[1]):  # Iterate over clusters
+    #         cluster_indices = np.where(self.stable_assignments[:, c])[0]
+    #         gaussian_to_cluster[cluster_indices] = c 
+         
 
     def save_model(self, path=None, save_data=True, save_sibr=True, save_merge=True):
         if path == None:

@@ -104,32 +104,29 @@ def get_cluster_language_features(cluster_masks, mask_language_features, num_clu
 #     o3d.io.write_point_cloud(ply_filename_complete, total_pcd)
     
 #     print(f"Saved cluster .ply files to {ply_dir}")
-def save_colored_objects_ply_simple(frame_id, means_xyz, assignments, cluster_masks, mask_lang_feat, dataset="Replica", ply_dir="/mnt/scratch/cluster_simple_ply"):
+def save_colored_objects_ply_simple(frame_id, means_xyz, assignments, cluster_masks, mask_lang_feat, dataset="Scannetpp", ply_dir="/mnt/scratch/cluster_simple_ply"):
     os.makedirs(ply_dir, exist_ok=True)
-    if torch.is_tensor(means_xyz):
-        means_xyz = means_xyz.cpu().numpy()
-    if torch.is_tensor(assignments):
-        assignments = assignments.cpu().numpy()
+    means_xyz = means_xyz.cpu().numpy()
+    assignments = assignments.cpu().numpy()
     N, C = assignments.shape
-    
-    # Get language features and label IDs first
     cluster_lang_features = get_cluster_language_features(cluster_masks, mask_lang_feat, C, emb_dim=512, device="cuda")
-    class_names, text_features = load_text_embeddings(dataset=dataset)
+    class_names, text_features = load_text_embeddings(dataset)
     cluster_best_label_ids = label_cluster_features(cluster_lang_features, text_features, device="cuda")
     
     # # Create a mapping from label ID to color, ensuring same labels get same colors
-    # np.random.seed(42)
-    # unique_label_ids = list(set([label_id.item() for label_id in cluster_best_label_ids]))
-    label_to_color = {
-        label_id: np.array(LABEL_TO_COLOR[OVOSLAM_COLORED_LABELS[label_id]]) / 255.0
-        for label_id in cluster_best_label_ids
-    }
-    # Assign colors based on label IDs, not cluster IDs
-    cluster_colors = np.zeros((C, 3))
-    for c in range(C):
-        label_id = cluster_best_label_ids[c].item()
-        cluster_colors[c] = label_to_color[label_id]
-    
+    if dataset == 'Scannetpp':
+        np.random.seed(42)
+        cluster_colors = np.random.randint(0, 255, (C, 3), dtype=np.uint8) / 255.0
+    elif dataset == "Replica":
+        label_to_color = {
+            label_id: np.array(LABEL_TO_COLOR[OVOSLAM_COLORED_LABELS[label_id]]) / 255.0
+            for label_id in cluster_best_label_ids
+        }
+        cluster_colors = np.zeros((C, 3))
+        for c in range(C):
+            label_id = cluster_best_label_ids[c].item()
+            cluster_colors[c] = label_to_color[label_id]
+        
     # Apply colors to points
     all_colors = np.zeros((N, 3))
     for c in range(C):
@@ -141,10 +138,6 @@ def save_colored_objects_ply_simple(frame_id, means_xyz, assignments, cluster_ma
     total_pcd = o3d.geometry.PointCloud()
     total_pcd.points = o3d.utility.Vector3dVector(means_xyz)
     total_pcd.colors = o3d.utility.Vector3dVector(all_colors)
-    
-    # Set point size to be subtle (Open3D doesn't directly control point size in the PLY,
-    # but we can use voxel downsampling to create cleaner points)
-    # Note: The actual point size will be controlled when visualizing the PLY file
     
     ply_filename = os.path.join(ply_dir, f"complete_scene_{frame_id}.ply")
     o3d.io.write_point_cloud(ply_filename, total_pcd)
@@ -163,7 +156,7 @@ def save_colored_objects_ply_simple(frame_id, means_xyz, assignments, cluster_ma
     legend_labels = [f"{class_name} (Label ID: {label_idx})" for class_name, (label_idx, _) in legend_items.items()]
     legend_colors = [color for _, (_, color) in legend_items.items()]
     
-    fig, ax = plt.subplots(figsize=(6, len(legend_labels)*0.4))
+    _, ax = plt.subplots(figsize=(6, len(legend_labels)*0.4))
     ax.set_xlim(0, 1)
     ax.set_ylim(0, len(legend_labels))
     for i, (lbl, col) in enumerate(zip(legend_labels, legend_colors)):

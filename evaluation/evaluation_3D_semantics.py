@@ -87,13 +87,6 @@ def load_text_embeddings(labels):
     return text_features
 
 def save_colored_ply(filepath, xyz, rgb):
-    """
-    Save points with colors to a PLY file using plyfile.
-    :param filepath: Output path, e.g. 'result.ply'
-    :param xyz: (N,3) NumPy array of point coordinates
-    :param rgb: (N,3) NumPy array of RGB in [0..1], or [0..255]
-    """
-    # Ensure rgb is in 0..255 range (uint8) for standard PLY viewers
     if rgb.dtype != np.uint8:
         rgb_255 = (rgb * 255).clip(0, 255).astype(np.uint8)
     else:
