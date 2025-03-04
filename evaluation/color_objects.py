@@ -26,11 +26,11 @@ def label_cluster_features(cluster_lang_features, label_features, device="cuda:0
     cluster_best_label_ids = torch.argmax(similarities, dim=1)
     return cluster_best_label_ids
 
-def load_text_embeddings(dataset="Scannet"):
+def load_text_embeddings(dataset):
     if dataset == "Replica":
         class_names = OVOSLAM_COLORED_LABELS
-    elif dataset == "Scannet":
-        class_names = [NYU40[i] for i in NYU20_INDICES]
+    elif dataset == "Scannetpp":
+        class_names = list(NYU40.values())[1:]
     
     clip_model, _ = clip.load("ViT-B/32", device="cuda")
     text_prompts = class_names
@@ -104,7 +104,7 @@ def get_cluster_language_features(cluster_masks, mask_language_features, num_clu
 #     o3d.io.write_point_cloud(ply_filename_complete, total_pcd)
     
 #     print(f"Saved cluster .ply files to {ply_dir}")
-def save_colored_objects_ply_simple(frame_id, means_xyz, assignments, cluster_masks, mask_lang_feat, ply_dir="/mnt/scratch/cluster_simple_ply"):
+def save_colored_objects_ply_simple(frame_id, means_xyz, assignments, cluster_masks, mask_lang_feat, dataset="Replica", ply_dir="/mnt/scratch/cluster_simple_ply"):
     os.makedirs(ply_dir, exist_ok=True)
     if torch.is_tensor(means_xyz):
         means_xyz = means_xyz.cpu().numpy()
@@ -114,15 +114,15 @@ def save_colored_objects_ply_simple(frame_id, means_xyz, assignments, cluster_ma
     
     # Get language features and label IDs first
     cluster_lang_features = get_cluster_language_features(cluster_masks, mask_lang_feat, C, emb_dim=512, device="cuda")
-    class_names, text_features = load_text_embeddings(dataset="Replica")
+    class_names, text_features = load_text_embeddings(dataset=dataset)
     cluster_best_label_ids = label_cluster_features(cluster_lang_features, text_features, device="cuda")
     
-    # Create a mapping from label ID to color, ensuring same labels get same colors
-    np.random.seed(42)
-    unique_label_ids = list(set([label_id.item() for label_id in cluster_best_label_ids]))
+    # # Create a mapping from label ID to color, ensuring same labels get same colors
+    # np.random.seed(42)
+    # unique_label_ids = list(set([label_id.item() for label_id in cluster_best_label_ids]))
     label_to_color = {
         label_id: np.array(LABEL_TO_COLOR[OVOSLAM_COLORED_LABELS[label_id]]) / 255.0
-        for label_id in unique_label_ids
+        for label_id in cluster_best_label_ids
     }
     # Assign colors based on label IDs, not cluster IDs
     cluster_colors = np.zeros((C, 3))

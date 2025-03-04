@@ -20,6 +20,7 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 
 from evaluation.color_objects import save_colored_objects_ply_simple
+from evaluation.evaluation_3D_semantics import evaluate_3D_semantics
 
 class Mapping(object):
     def __init__(self, args, recorder=None) -> None:
@@ -113,7 +114,7 @@ class Mapping(object):
         self.cluster_matching_threshold = 2.0
         self.cluster_masks = {}
         
-    def mapping(self, frame, frame_map, frame_id, optimization_params, sam_masks, rend_clusters, mask_lang_feat, num_frames):
+    def mapping(self, frame, frame_map, frame_id, optimization_params, sam_masks, rend_clusters, mask_lang_feat, num_frames, dataset_params):
         self.frame_map = frame_map
         # add new gaussians to self.pointcloud
         # self.temp_pointcloud is always empty afterwards
@@ -166,18 +167,17 @@ class Mapping(object):
         #         self.semantic_clustering(random_frame, random_index, random_frame_map, sam_masks, rend_clusters, mask_lang_feat, vis_caption)
         
         if (frame_id % 500 == 0 or frame_id == num_frames - 1) and frame_id != 0:            
-            # save_colored_objects_ply(
-            #     frame_id,
-            #     self.stable_params["xyz"],
-            #     self.stable_assignments,
-            #     self.cluster_masks,
-            #     mask_lang_feat)
             save_colored_objects_ply_simple(
                 frame_id,
                 self.stable_params["xyz"],
                 self.stable_assignments,
                 self.cluster_masks,
                 mask_lang_feat)
+            
+            evaluate_3D_semantics(self.stable_params["xyz"], 
+                                  self.get_oneD_assignments(), 
+                                  self.get_cluster_language_features(mask_lang_feat, self.stable_assignments.shape[1]), 
+                                  dataset_params)
 
         move_to_cpu(frame)
 
@@ -1244,9 +1244,9 @@ class Mapping(object):
         # compute ious between rendered cluster areas
         iou_matrix = calculate_iou(rend_old_visible_clusters, rend_new_clusters)
         
-        intersection_matrix_b = (assignments.unsqueeze(2) & current_assignments.unsqueeze(1)).sum(dim=0)
-        union_matrix_b = (assignments.unsqueeze(2) | current_assignments.unsqueeze(1)).sum(dim=0)
-        iou3d_matrix_b = (intersection_matrix_b / (union_matrix_b + 1e-8)).T
+        # intersection_matrix_b = (assignments.unsqueeze(2) & current_assignments.unsqueeze(1)).sum(dim=0)
+        # union_matrix_b = (assignments.unsqueeze(2) | current_assignments.unsqueeze(1)).sum(dim=0)
+        # iou3d_matrix_b = (intersection_matrix_b / (union_matrix_b + 1e-8)).T
         
         # get combined similarity matrix
         combined_matrix = 2 * cossim_matrix + iou_matrix.cuda()
@@ -1271,8 +1271,8 @@ class Mapping(object):
                 #participating_old = participating_old - self.pointcloud.get_points_num
                 participating_old = participating_old[participating_old != -1]
             
-                assignments[:,matched_old_cluster_ind] = assignments[:,matched_old_cluster_ind] | current_assignments[:,i]
-                # assignments[participating_old.cpu().long(),matched_old_cluster_ind] = False
+                #assignments[:,matched_old_cluster_ind] = assignments[:,matched_old_cluster_ind] | current_assignments[:,i]
+                assignments[participating_old.cpu().long(),matched_old_cluster_ind] = False
                 assignments[cluster_wise_gaussian_mapping[matched_old_vis_cluster_ind.item()][participating_old.long()],matched_old_cluster_ind] = False
                 del rend_clusters[num_old_clusters + i]
                     
