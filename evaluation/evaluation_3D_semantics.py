@@ -29,7 +29,7 @@ def translate_points(points, translation):
 
 
 def calculate_metrics(gt, pred):
-    total_classes = gt.max().item()
+    total_classes = gt.max().item() + 1
     gt = gt.cpu()
     pred = pred.cpu()
 
@@ -40,7 +40,7 @@ def calculate_metrics(gt, pred):
     correct      = torch.zeros(total_classes)
     total        = torch.zeros(total_classes)
 
-    for cls_id in range(1, total_classes + 1):
+    for cls_id in range(1, total_classes):
         intersection[cls_id] = torch.sum((gt == cls_id) & (pred == cls_id)).item()
         union[cls_id]        = torch.sum((gt == cls_id) | (pred == cls_id)).item()
         correct[cls_id]      = torch.sum((gt == cls_id) & (pred == cls_id)).item()
