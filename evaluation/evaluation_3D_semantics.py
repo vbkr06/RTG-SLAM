@@ -8,15 +8,74 @@ from plyfile import PlyData, PlyElement
 import torch.nn.functional as F
 import clip
 import open3d as o3d
-from evaluation.constants import OVOSLAM_COLORED_LABELS, LABEL_TO_COLOR, NYU40, NYU20_INDICES
+from evaluation.constants import OVOSLAM_COLORED_LABELS, NYU40, NYU20_INDICES, REPLICA_EXISTING_CLASSES, REPLICA_CLASSES
+import json
 
 
-def read_labels_from_ply(file_path):
+def read_labels_from_scannet_ply(file_path):
     ply_data = PlyData.read(file_path)
     vertex_data = ply_data['vertex'].data
     points = np.vstack((vertex_data['x'], vertex_data['y'], vertex_data['z'])).T
     labels = vertex_data['label']  
     return points, labels
+
+def load_instance_to_class_map(json_path):
+    """
+    Reads Habitat's `info_semantic.json` and extracts a mapping from object ID → class ID.
+    """
+    with open(json_path, "r") as f:
+        data = json.load(f)
+
+    # Create a mapping {object_id: class_id}
+    instance_to_class = {obj["id"]: obj["class_id"] for obj in data["objects"]}
+    return instance_to_class
+
+def create_object_to_subset_class_map(json_path, replica_classes, instance_to_class):
+    class_to_subset = {class_id: i for i, class_id in enumerate(replica_classes)}
+
+    # Build a mapping: object id → subset class id.
+    object_to_subset_class = {}
+    for obj_id, class_id in instance_to_class.items():
+        subset_class = class_to_subset.get(class_id, -1)
+        object_to_subset_class[obj_id] = subset_class
+
+    return object_to_subset_class
+
+def read_from_replica_ply(file_path, json_path, num_classes=51):
+    instance_to_class = load_instance_to_class_map(json_path)
+    class_indices = []
+    if num_classes == 101:
+        class_indices = [i for i in range(len(REPLICA_CLASSES))]
+    elif num_classes == 51:
+        class_indices = REPLICA_EXISTING_CLASSES
+
+    object_to_subset_class = create_object_to_subset_class_map(json_path, class_indices, instance_to_class)
+
+    ply_data = PlyData.read(file_path)
+    vertex_data = ply_data['vertex'].data
+
+    points = np.vstack((vertex_data['x'], vertex_data['y'], vertex_data['z'])).T
+
+    num_points = len(points)
+    class_ids = np.full(num_points, -1, dtype=np.int32)
+    subset_class_ids = np.full(num_points, -1, dtype=np.int32)
+
+    if 'face' in ply_data and 'object_id' in ply_data['face'].data.dtype.names:
+        face_data = ply_data['face'].data
+        face_object_ids = np.array(face_data['object_id'])  # (num_faces,)
+        face_vertex_indices = face_data['vertex_indices']     # List of lists
+
+        for i, indices in enumerate(face_vertex_indices):
+            object_id = face_object_ids[i]  # Get object ID for this face
+            full_class = instance_to_class.get(object_id, -1)
+            subset_class = object_to_subset_class.get(object_id, -1)
+
+            idx = np.array(indices)
+            class_ids[idx] = full_class
+            subset_class_ids[idx] = subset_class
+
+    return points, class_ids, subset_class_ids
+
 
 
 def rotate_points(points, angle_deg, axis):
@@ -25,8 +84,6 @@ def rotate_points(points, angle_deg, axis):
 
 def translate_points(points, translation):
     return points + np.array(translation)
-
-
 
 def calculate_metrics(gt, pred):
     total_classes = gt.max().item() + 1
@@ -94,7 +151,6 @@ def save_colored_ply(filepath, xyz, rgb):
 
     num_verts = xyz.shape[0]
 
-    # Create a structured array suitable for plyfile
     vertex_data = np.zeros(num_verts, dtype=[
         ("x", "f4"), ("y", "f4"), ("z", "f4"),
         ("red", "u1"), ("green", "u1"), ("blue", "u1")
@@ -116,10 +172,6 @@ def evaluate_3D_semantics(xyz, assignments, cluster_lang_feat, dataset_params):
     dataset = dataset_params.type
     scene_name = os.path.basename(dataset_dir)
     output_dir = './output/'
-    
-    gt_ply = os.path.join(dataset_params.source_path, f"{scene_name}_vh_clean_2.labels.ply")
-    points, labels = read_labels_from_ply(gt_ply)
-    print(f"[{scene_name}] Loaded {points.shape[0]} vertices. Max label={labels.max()}")
 
     # target_id_mapping = {}
     # for new_idx, old_label in enumerate(NYU40.keys(), start=1):
@@ -128,24 +180,32 @@ def evaluate_3D_semantics(xyz, assignments, cluster_lang_feat, dataset_params):
     # for old_value, new_value in target_id_mapping.items():
     #     mask = (labels == old_value)
     #     new_labels[mask] = new_value
-
+    gt_points, gt_labels = None, None
     if dataset == "Replica":
-        text_labels = []
+        gt_ply = os.path.join(dataset_params.source_path, "mesh_semantic.ply")
+        json_path = os.path.join(dataset_params.source_path, "info_semantic.json")
+        gt_points, _, subset_ids = read_from_replica_ply(gt_ply, json_path)
+        gt_labels = torch.from_numpy(subset_ids).long().cuda()
+        text_labels = [REPLICA_CLASSES[i] for i in REPLICA_EXISTING_CLASSES][1:]
     elif dataset == "Scannetpp":
+        gt_ply = os.path.join(dataset_params.source_path, f"{scene_name}_vh_clean_2.labels.ply")
+        gt_points, labels = read_labels_from_scannet_ply(gt_ply)
         gt_labels = torch.from_numpy(np.array(labels, dtype=np.int32)).long().cuda()
         text_labels = list(NYU40.values())[1:]#[NYU40[i] for i in NYU20_INDICES]
+
+    print(f"[{scene_name}] Loaded {gt_points.shape[0]} vertices. Max label={gt_labels.max()}")
 
     label_feat = load_text_embeddings(text_labels)
     cluster_to_label = label_cluster_features(cluster_lang_feat, label_feat) + 1
     labeled_assignments = cluster_to_label[assignments]
    
-    aligned_xyz = align_to_gt(xyz.cpu(), points, scene_name)
+    aligned_xyz = align_to_gt(xyz.cpu(), gt_points, scene_name)
     print("Groundtruth points extents:")
-    print("min:", points.min(axis=0), "max:", points.max(axis=0))
+    print("min:", gt_points.min(axis=0), "max:", gt_points.max(axis=0))
     print("Means3D extents:")
     print("min:", aligned_xyz.min(axis=0), "max:", aligned_xyz.max(axis=0))
     kd_tree = cKDTree(aligned_xyz)
-    dist, nn_idx = kd_tree.query(points, k=1)
+    dist, nn_idx = kd_tree.query(gt_points, k=1)
     print("Nearest neighbor distance statistics:")
     print("Min distance:", dist.min())
     print("Max distance:", dist.max())
@@ -163,25 +223,33 @@ def evaluate_3D_semantics(xyz, assignments, cluster_lang_feat, dataset_params):
     # ###
     # unlabeled_mask = (new_labels == 0)
     # correct_mask   = (new_labels == pred_labels) & ~unlabeled_mask
-
-    # # 2) Create an array of colors, one for each vertex
     # colors = np.zeros((points.shape[0], 3), dtype=np.float32)  # default is black (0,0,0)
 
-    # # 3) Color correct predictions (green)
+    # correct predictions (green)
     # colors[correct_mask] = [0.0, 1.0, 0.0]   # green
 
-    # # 4) Color all other labeled points that are incorrect (red)
+    # incorrect (red)
     # incorrect_mask = (~correct_mask) & (~unlabeled_mask)
     # colors[incorrect_mask] = [1.0, 0.0, 0.0]  # red
-    
-    # # 3) Save the point cloud to a PLY file
-    # output_ply = f"benchmarking/{scene_name}_prediction_visual.ply"
+    # output_ply = f"{output_dir}/{scene_name}_prediction_visual.ply"
     # save_colored_ply(output_ply, points, colors)
 
 def align_to_gt(xyz, gt_xyz, scene_name):
     # manual initial guess (r_x, r_y, r_z, t_x, t_y, t_z)
     transformations = {
-        "scene0050_00": (-140, 10, 215, 5, 2, 2)
+        "scene0011_00": (-140, 10, 215, 5, 2, 2),           # dummy
+        "scene0050_00": (-140, 10, 215, 5, 2, 2),           # aligned
+        "scene0231_00": (-140, 10, 215, 5, 2, 2),           # dummy
+        "scene0378_00": (-140, 10, 215, 5, 2, 2),           # dummy
+        "scene0518_00": (-140, 10, 215, 5, 2, 2),           # dummy
+        "room0":        (-110, -5, 110, 3.5, 0.2, 0.3),     # aligned
+        "room1":        (-110, -5, 110, 3.5, 0.2, 0.3),     # dummy
+        "room2":        (-110, -5, 110, 3.5, 0.2, 0.3),     # dummy
+        "office0":        (-110, -5, 110, 3.5, 0.2, 0.3),   # dummy
+        "office1":        (-110, -5, 110, 3.5, 0.2, 0.3),   # dummy
+        "office2":        (-110, -5, 110, 3.5, 0.2, 0.3),   # dummy
+        "office3":        (-110, -5, 110, 3.5, 0.2, 0.3),   # dummy
+        "office4":        (-110, -5, 110, 3.5, 0.2, 0.3),   # dummy
     }
     (r_x, r_y, r_z, t_x, t_y, t_z) = transformations[scene_name]
     
@@ -202,21 +270,18 @@ def align_to_gt(xyz, gt_xyz, scene_name):
     pred_pcd.transform(rotation_4x4)
     pred_pcd.transform(translation_4x4)
     
-    # --- Automatic Alignment Using ICP ---
     print("Starting automatic alignment...")
     dTau = 0.005
     trajectory_transform = np.eye(4)
 
-    # Perform coarse alignment
     r2 = registration_vol_ds(pred_pcd, pcd_gt, trajectory_transform, dTau, dTau * 50, 100)
-    print("Stage 2 transformation:\n", r2.transformation)
+    print("Automatic Transformation:\n", r2.transformation)
 
-    # Apply the transformation
     pcd_aligned = pred_pcd.transform(r2.transformation)
+    o3d.io.write_point_cloud("/mnt/projects/FeatureGSLAM/ply/room0.ply", pcd_aligned)
 
-    # --- Extract Transformed XYZ to PyTorch Tensor ---
-    transformed_xyz = np.asarray(pcd_aligned.points)  # Convert to NumPy array
-    transformed_tensor = torch.tensor(transformed_xyz, dtype=torch.float32)  # Convert to PyTorch tensor
+    transformed_xyz = np.asarray(pcd_aligned.points) 
+    transformed_tensor = torch.tensor(transformed_xyz, dtype=torch.float32)  
     print("Extracted transformed XYZ coordinates into a tensor:", transformed_tensor.shape)
 
     return transformed_tensor
