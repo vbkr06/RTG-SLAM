@@ -7,6 +7,7 @@ from scipy.spatial.transform import Rotation as R
 from plyfile import PlyData, PlyElement
 import torch.nn.functional as F
 import clip
+import open3d as o3d
 from evaluation.constants import OVOSLAM_COLORED_LABELS, LABEL_TO_COLOR, NYU40, NYU20_INDICES
 
 
