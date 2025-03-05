@@ -1149,7 +1149,7 @@ class Mapping(object):
         render_output = self.renderer.render(
             frame, stable_par
         )
-        pixel_to_gaussian_map = render_output["pixelwise_contribution"]
+        pixel_to_gaussian_map = render_output["depth_index_map"]
         total_rend_depth = render_output['depth'][0]
         total_gt_depth = frame_map['depth_map'][:,:,0].clone()
         total_gt_depth[(render_output['depth'][0] == 0)] = 0
@@ -1172,7 +1172,7 @@ class Mapping(object):
             #participating_gaussians = participating_gaussians[participating_gaussians != -1]
             
             # participating_gaussians = participating_gaussians.cpu()
-            participating_gaussians = participating_gaussians[participating_gaussians >= 0]
+            participating_gaussians = participating_gaussians[participating_gaussians > 0]
             #participating_gaussians = participating_gaussians - self.pointcloud.get_points_num
             
             if participating_gaussians.size(0) == 0:
@@ -1200,8 +1200,8 @@ class Mapping(object):
             rend_clusters[new_cluster_index] = render_new_output['render'].sum(dim=0).bool()
         
         edge_gaussians = torch.unique(pixel_to_gaussian_map[0][total_depth_distance.bool()])
-        # current_assignments[edge_gaussians.cpu().long(),:] = False
-        # assignments[edge_gaussians.cpu().long(),:] = False
+        current_assignments[edge_gaussians.cpu().long(),:] = False
+        assignments[edge_gaussians.cpu().long(),:] = False
         
         if not real_new_masks:
             return
@@ -1238,12 +1238,14 @@ class Mapping(object):
             mod_par = {key: stable_par[key][gaussians_of_one_cluster].cuda() for key in stable_par}
             render_new_output = self.renderer.render(frame, mod_par)#self.get_point_subset(gaussians_of_one_cluster))
             rend_clusters[i.item()] = render_new_output['render'].sum(dim=0).bool()
-            cluster_wise_gaussian_contr[ind] = render_new_output['pixelwise_contribution'][0]
+            cluster_wise_gaussian_contr[ind] = render_new_output['depth_index_map'][0]
             cluster_wise_gaussian_mapping[ind] = torch.where(assignments[:,i])[0]
             
         # get tensors containing language features of all clusters
         # first compute language features for all clusters
         lang_feat_old_clusters = self.get_cluster_language_features(mask_lang_feat, num_old_clusters)
+        if torch.any(lang_feat_old_clusters.sum(dim=1) == 0):
+            print("fatal")
         # take only features of visible cluster
         lang_feat_old_clusters = lang_feat_old_clusters[visible_clusters_ind]
         lang_feat_new_clusters = mask_lang_feat[frame_id][real_new_masks]
@@ -1269,14 +1271,20 @@ class Mapping(object):
         # compute ious between rendered cluster areas
         iou_matrix = calculate_iou(rend_old_visible_clusters, rend_new_clusters)
         
-        # intersection_matrix_b = (assignments.unsqueeze(2) & current_assignments.unsqueeze(1)).sum(dim=0)
-        # union_matrix_b = (assignments.unsqueeze(2) | current_assignments.unsqueeze(1)).sum(dim=0)
-        # iou3d_matrix_b = (intersection_matrix_b / (union_matrix_b + 1e-8)).T
+        depth_determining = torch.unique(pixel_to_gaussian_map[0]).long()
+        depth_determining = depth_determining[depth_determining >= 0]
+        intersection_matrix_b = (assignments[depth_determining].unsqueeze(2) & current_assignments[depth_determining].unsqueeze(1)).sum(dim=0)
+        union_matrix_b = (assignments[depth_determining].unsqueeze(2) | current_assignments[depth_determining].unsqueeze(1)).sum(dim=0)
+        iou3d_matrix_b = (intersection_matrix_b / (union_matrix_b + 1e-8)).T
         
         # get combined similarity matrix
-        combined_matrix = 2 * cossim_matrix + iou_matrix.cuda()
+        #combined_matrix = 2 * cossim_matrix + iou_matrix.cuda()
+        combined_matrix = cossim_matrix + iou3d_matrix_b
         # get best matching old cluster for each new cluster/mask
         max_score_per_new_cluster, max_ind_per_new_cluster = combined_matrix.max(dim=1)
+        
+        if torch.unique(max_ind_per_new_cluster).size(0) != max_ind_per_new_cluster.size(0):
+            print("error")
         
         new_clusters_created = []
         
@@ -1286,7 +1294,7 @@ class Mapping(object):
             matched_old_vis_cluster_ind = max_ind_per_new_cluster[i]
             matched_old_cluster_ind = visible_clusters_ind[matched_old_vis_cluster_ind]
             
-            if score_curr_new_cluster >= self.cluster_matching_threshold:
+            if score_curr_new_cluster >= 1.1:#self.cluster_matching_threshold:
                 bool_old = rend_old_visible_clusters[matched_old_vis_cluster_ind]
                 bool_old = bool_old & (pixel_to_gaussian_map[0] == cluster_wise_gaussian_mapping[matched_old_vis_cluster_ind.item()][cluster_wise_gaussian_contr[matched_old_vis_cluster_ind].cpu().long()])
                 bool_new = rend_new_clusters[i]
@@ -1296,34 +1304,50 @@ class Mapping(object):
                 #participating_old = participating_old - self.pointcloud.get_points_num
                 participating_old = participating_old[participating_old != -1]
             
-                #assignments[:,matched_old_cluster_ind] = assignments[:,matched_old_cluster_ind] | current_assignments[:,i]
-                assignments[participating_old.cpu().long(),matched_old_cluster_ind] = False
                 assignments[cluster_wise_gaussian_mapping[matched_old_vis_cluster_ind.item()][participating_old.long()],matched_old_cluster_ind] = False
+                assignments[:,matched_old_cluster_ind] = assignments[:,matched_old_cluster_ind] | current_assignments[:,i]
+                #assignments[participating_old.cpu().long(),matched_old_cluster_ind] = False
                 del rend_clusters[num_old_clusters + i]
                     
                 # add mask
                 assert matched_old_cluster_ind.item() in self.cluster_masks.keys()
                 self.cluster_masks[matched_old_cluster_ind.item()].append((frame_id, real_new_masks[i]))
             else:
+                if current_assignments[:,i].sum() < 10:
+                    continue
                 new_cluster_id = num_old_clusters + len(new_clusters_created)
                 new_clusters_created.append(new_cluster_id)
                 rend_clusters[new_cluster_id] = rend_clusters.pop(num_old_clusters + i)
                 # save masks
-                self.cluster_masks.setdefault(new_cluster_id, []).append((frame_id, i))
+                #self.cluster_masks.setdefault(new_cluster_id, []).append((frame_id, i))
+                self.cluster_masks[new_cluster_id] = [(frame_id, i)]
 
         # edge_gaussians = torch.unique(pixel_to_gaussian_map[0][total_depth_distance.bool()])
-        current_assignments[edge_gaussians.cpu().long(),:] = False
-        assignments[edge_gaussians.cpu().long(),:] = False
+        # current_assignments[edge_gaussians.cpu().long(),:] = False
+        # assignments[edge_gaussians.cpu().long(),:] = False
 
         if len(new_clusters_created):
-            indices_of_all_unmatched = max_score_per_new_cluster < self.cluster_matching_threshold
+            # if frame_id >= 0:
+        
+            #     for ind, cluster in enumerate(rend_old_visible_clusters):
+            #         plot_single_cluster(cluster, frame, str(ind), "debug_vis/old_cluster_")
+                
+            #     for i, cluster in enumerate(rend_new_clusters):
+            #         plot_single_cluster(cluster, frame, str(i), "debug_vis/new_cluster_")
+                
+            indices_of_all_unmatched = max_score_per_new_cluster < 1.1#self.cluster_matching_threshold
             assignments = torch.cat([assignments, current_assignments[:,indices_of_all_unmatched]], dim=1)
+            
             
         # self.unstable_assignments = assignments[:num_unstable_gaussians]
         # self.stable_assignments = assignments[num_unstable_gaussians:]
         self.stable_assignments = assignments
         
-        if frame_id % 20 == 0 or vis_caption:
+        # intersection_matrix_b = (assignments.unsqueeze(2) & current_assignments.unsqueeze(1)).sum(dim=0)
+        # union_matrix_b = (assignments.unsqueeze(2) | current_assignments.unsqueeze(1)).sum(dim=0)
+        # iou3d_matrix_b = (intersection_matrix_b / (union_matrix_b + 1e-8)).T
+        
+        if frame_id % 10 == 0:# or vis_caption:
             plot_cluster_language_association(rend_clusters, None, frame, new_clusters_created + [i.item() for i in visible_clusters_ind], out_file_prefix=f"{vis_caption}cluster_frame{frame_id}")
         
         torch.cuda.empty_cache()
