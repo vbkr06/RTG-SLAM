@@ -19,7 +19,7 @@ from clustering.association_visualizer import plot_cluster_language_association,
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 
-from evaluation.color_objects import save_colored_objects_ply_simple
+from evaluation.color_objects import save_colored_ply
 from evaluation.evaluation_3D_semantics import evaluate_3D_semantics
 
 class Mapping(object):
@@ -166,16 +166,18 @@ class Mapping(object):
         #         vis_caption =  f"visualization/{run_desc}/visualization_global/opt_round{(int)(frame_id / self.cluster_frequency)}_"
         #         self.semantic_clustering(random_frame, random_index, random_frame_map, sam_masks, rend_clusters, mask_lang_feat, vis_caption)
         
-        if (frame_id % 1000 == 0 or frame_id == num_frames - 1) and frame_id != 0:            
-            save_colored_objects_ply_simple(
+        if (frame_id % 40 == 0 or frame_id == num_frames - 2) and frame_id != 0: 
+            cluster_lang_feat = self.get_cluster_language_features(mask_lang_feat, self.stable_assignments.shape[1]) 
+           
+            save_colored_ply(
                 frame_id,
                 self.stable_params["xyz"],
                 self.stable_assignments,
-                self.cluster_masks,
-                mask_lang_feat)
+                cluster_lang_feat,
+                dataset=dataset_params.type)
             
             evaluate_3D_semantics(self.stable_params["xyz"], 
-                                  self.get_oneD_assignments(), 
+                                  self.stable_assignments.argmax(dim=1), 
                                   self.get_cluster_language_features(mask_lang_feat, self.stable_assignments.shape[1]), 
                                   dataset_params)
 
@@ -1334,7 +1336,7 @@ class Mapping(object):
         
         cluster_lang_features = torch.zeros((num_clusters, 512), device = 'cuda')
         
-        max_samples = 100 
+        max_samples = 200 
 
         for cluster_idx, all_mask_infos in self.cluster_masks.items():
             num_masks = len(all_mask_infos)

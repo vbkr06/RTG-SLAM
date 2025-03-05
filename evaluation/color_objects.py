@@ -104,14 +104,17 @@ def get_cluster_language_features(cluster_masks, mask_language_features, num_clu
 #     o3d.io.write_point_cloud(ply_filename_complete, total_pcd)
     
 #     print(f"Saved cluster .ply files to {ply_dir}")
-def save_colored_objects_ply_simple(frame_id, means_xyz, assignments, cluster_masks, mask_lang_feat, dataset="Scannetpp", ply_dir="/mnt/scratch/cluster_simple_ply"):
+
+
+
+def save_colored_ply(frame_id, means_xyz, assignments, cluster_lang_feat, dataset="Scannetpp", ply_dir="/mnt/scratch/cluster_simple_ply"):
     os.makedirs(ply_dir, exist_ok=True)
     means_xyz = means_xyz.cpu().numpy()
     assignments = assignments.cpu().numpy()
     N, C = assignments.shape
-    cluster_lang_features = get_cluster_language_features(cluster_masks, mask_lang_feat, C, emb_dim=512, device="cuda")
+    assignments = assignments.argmax(dim=1)
     class_names, text_features = load_text_embeddings(dataset)
-    cluster_best_label_ids = label_cluster_features(cluster_lang_features, text_features, device="cuda")
+    cluster_best_label_ids = label_cluster_features(cluster_lang_feat, text_features, device="cuda")
     
     # # Create a mapping from label ID to color, ensuring same labels get same colors
     if dataset == 'Scannetpp':
@@ -119,7 +122,7 @@ def save_colored_objects_ply_simple(frame_id, means_xyz, assignments, cluster_ma
         cluster_colors = np.random.randint(0, 255, (C, 3), dtype=np.uint8) / 255.0
     elif dataset == "Replica":
         label_to_color = {
-            label_id: np.array(LABEL_TO_COLOR[OVOSLAM_COLORED_LABELS[label_id]]) / 255.0
+            label_id.item(): np.array(LABEL_TO_COLOR[OVOSLAM_COLORED_LABELS[label_id]]) / 255.0
             for label_id in cluster_best_label_ids
         }
         cluster_colors = np.zeros((C, 3))
@@ -130,7 +133,7 @@ def save_colored_objects_ply_simple(frame_id, means_xyz, assignments, cluster_ma
     # Apply colors to points
     all_colors = np.zeros((N, 3))
     for c in range(C):
-        inds = np.where(assignments[:, c])[0]
+        inds = np.where(assignments[c])[0]
         if len(inds) > 0:
             all_colors[inds] = cluster_colors[c]
     
@@ -145,7 +148,7 @@ def save_colored_objects_ply_simple(frame_id, means_xyz, assignments, cluster_ma
     # Create legend based on label IDs, not cluster IDs
     legend_items = {}  # Use a dict to avoid duplicates for the same label
     for c in range(C):
-        if np.sum(assignments[:, c]) > 0:
+        if np.sum(assignments[c]) > 0:
             label_idx = cluster_best_label_ids[c].item()
             class_name = class_names[label_idx]
             # Only add this label once to the legend
