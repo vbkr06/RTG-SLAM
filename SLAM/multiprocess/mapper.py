@@ -158,13 +158,18 @@ class Mapping(object):
         self.cluster_frames_window.append(frame)
         self.cluster_maps_windwos.append(frame_map) 
         # self.processed_map
-        # if frame_id % self.cluster_frequency == 0 and frame_id != 0:
-        #     for _ in range(self.cluster_iter):  
-        #         random_index = random.randint(max(0, frame_id - self.cluster_window_size), frame_id)
-        #         random_frame = self.cluster_frames_window[min(frame_id, self.cluster_window_size - 1) - (frame_id - random_index)]
-        #         random_frame_map = self.cluster_maps_windwos[min(frame_id, self.cluster_window_size - 1) - (frame_id - random_index)]
-        #         vis_caption =  f"visualization/{run_desc}/visualization_global/opt_round{(int)(frame_id / self.cluster_frequency)}_"
-        #         self.semantic_clustering(random_frame, random_index, random_frame_map, sam_masks, rend_clusters, mask_lang_feat, vis_caption)
+        if frame_id % self.cluster_frequency == 0 and frame_id != 0:
+            for _ in range(self.cluster_iter):  
+                # frame_id == 50
+                # queue_size = 5
+                # window_size = 5
+                # random_index = rand(45, 50) -> 46
+                # rand_frame = queue[0]
+                random_index = random.randint(max(0, frame_id - self.cluster_window_size + 1), frame_id)
+                random_frame = self.cluster_frames_window[min(frame_id, self.cluster_window_size - 1) - (frame_id - random_index)]
+                random_frame_map = self.cluster_maps_windwos[min(frame_id, self.cluster_window_size - 1) - (frame_id - random_index)]
+                vis_caption =  f"visualization/{run_desc}/visualization_global/opt_round{(int)(frame_id / self.cluster_frequency)}_"
+                self.semantic_clustering(random_frame, random_index, random_frame_map, sam_masks, rend_clusters, mask_lang_feat, vis_caption)
         
         if (frame_id % 1000 == 0 or frame_id == num_frames - 1) and frame_id != 0:            
             save_colored_objects_ply_simple(
@@ -1327,13 +1332,13 @@ class Mapping(object):
         # assignments[edge_gaussians.cpu().long(),:] = False
 
         if len(new_clusters_created):
-            # if frame_id >= 0:
+            if frame_id >= 0:
         
-            #     for ind, cluster in enumerate(rend_old_visible_clusters):
-            #         plot_single_cluster(cluster, frame, str(ind), "debug_vis/old_cluster_")
+                for ind, cluster in enumerate(rend_old_visible_clusters):
+                    plot_single_cluster(cluster, frame, str(ind), "debug_vis/old_cluster_")
                 
-            #     for i, cluster in enumerate(rend_new_clusters):
-            #         plot_single_cluster(cluster, frame, str(i), "debug_vis/new_cluster_")
+                for i, cluster in enumerate(rend_new_clusters):
+                    plot_single_cluster(cluster, frame, str(i), "debug_vis/new_cluster_")
                 
             indices_of_all_unmatched = max_score_per_new_cluster < 1.1#self.cluster_matching_threshold
             assignments = torch.cat([assignments, current_assignments[:,indices_of_all_unmatched]], dim=1)
@@ -1347,7 +1352,7 @@ class Mapping(object):
         # union_matrix_b = (assignments.unsqueeze(2) | current_assignments.unsqueeze(1)).sum(dim=0)
         # iou3d_matrix_b = (intersection_matrix_b / (union_matrix_b + 1e-8)).T
         
-        if frame_id % 10 == 0:# or vis_caption:
+        if True: #frame_id % 10 == 0 or vis_caption:
             plot_cluster_language_association(rend_clusters, None, frame, new_clusters_created + [i.item() for i in visible_clusters_ind], out_file_prefix=f"{vis_caption}cluster_frame{frame_id}")
         
         torch.cuda.empty_cache()
