@@ -1273,8 +1273,8 @@ class Mapping(object):
         
         depth_determining = torch.unique(pixel_to_gaussian_map[0]).long()
         depth_determining = depth_determining[depth_determining >= 0]
-        intersection_matrix_b = (assignments[depth_determining].unsqueeze(2) & current_assignments[depth_determining].unsqueeze(1)).sum(dim=0)
-        union_matrix_b = (assignments[depth_determining].unsqueeze(2) | current_assignments[depth_determining].unsqueeze(1)).sum(dim=0)
+        intersection_matrix_b = (assignments[depth_determining, visible_clusters_ind].unsqueeze(2) & current_assignments[depth_determining, visible_clusters_ind].unsqueeze(1)).sum(dim=0)
+        union_matrix_b = (assignments[depth_determining, visible_clusters_ind].unsqueeze(2) | current_assignments[depth_determining, visible_clusters_ind].unsqueeze(1)).sum(dim=0)
         iou3d_matrix_b = (intersection_matrix_b / (union_matrix_b + 1e-8)).T
         
         # get combined similarity matrix
