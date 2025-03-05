@@ -10,7 +10,6 @@ import clip
 from evaluation.constants import OVOSLAM_COLORED_LABELS, LABEL_TO_COLOR, NYU40, NYU20_INDICES
 
 
-
 def read_labels_from_ply(file_path):
     ply_data = PlyData.read(file_path)
     vertex_data = ply_data['vertex'].data
@@ -135,29 +134,16 @@ def evaluate_3D_semantics(xyz, assignments, cluster_lang_feat, dataset_params):
         gt_labels = torch.from_numpy(np.array(labels, dtype=np.int32)).long().cuda()
         text_labels = list(NYU40.values())[1:]#[NYU40[i] for i in NYU20_INDICES]
 
-    # # Apply your scene-specific transformation
-    # means3D = rotate_points(means3D, 250, 'x')
-    # means3D = rotate_points(means3D, 0, 'y')
-    # means3D = rotate_points(means3D, 159, 'z')
-    # means3D = translate_points(means3D, [2.76, 2.98, 1.3])
-
-    # cluster_to_label = data['assigned_label_idx']
-    # gaussian_labels = cluster_to_label[gaussian_cluster_assignments]
-
-    # print("Groundtruth points extents:")
-    # print("min:", points.min(axis=0), "max:", points.max(axis=0))
-    # print("Means3D extents:")
-    # print("min:", means3D.min(axis=0), "max:", means3D.max(axis=0))
-    
     label_feat = load_text_embeddings(text_labels)
     cluster_to_label = label_cluster_features(cluster_lang_feat, label_feat) + 1
     labeled_assignments = cluster_to_label[assignments]
-    # # Remap predicted labels
-    # if len(gaussian_labels.shape) > 1:
-    #     gaussian_labels = gaussian_labels.squeeze(-1)
-
-    # # Use nearest-neighbor to assign each vertex in GT to a predicted label
-    kd_tree = cKDTree(xyz.cpu())
+   
+    aligned_xyz = align_to_gt(xyz.cpu(), points, scene_name)
+    print("Groundtruth points extents:")
+    print("min:", points.min(axis=0), "max:", points.max(axis=0))
+    print("Means3D extents:")
+    print("min:", aligned_xyz.min(axis=0), "max:", aligned_xyz.max(axis=0))
+    kd_tree = cKDTree(aligned_xyz)
     dist, nn_idx = kd_tree.query(points, k=1)
     print("Nearest neighbor distance statistics:")
     print("Min distance:", dist.min())
@@ -190,3 +176,61 @@ def evaluate_3D_semantics(xyz, assignments, cluster_lang_feat, dataset_params):
     # # 3) Save the point cloud to a PLY file
     # output_ply = f"benchmarking/{scene_name}_prediction_visual.ply"
     # save_colored_ply(output_ply, points, colors)
+
+def align_to_gt(xyz, gt_xyz, scene_name):
+    # manual initial guess (r_x, r_y, r_z, t_x, t_y, t_z)
+    transformations = {
+        "scene0050_00": (-140, 10, 215, 5, 2, 2)
+    }
+    (r_x, r_y, r_z, t_x, t_y, t_z) = transformations[scene_name]
+    
+    pcd_gt = o3d.geometry.PointCloud()
+    pcd_gt.points = o3d.utility.Vector3dVector(gt_xyz)
+    pcd_gt.paint_uniform_color([0, 1, 0])  # Green for GT
+
+    pred_pcd = o3d.geometry.PointCloud()
+    pred_pcd.points = o3d.utility.Vector3dVector(xyz)    
+    pred_pcd.paint_uniform_color([1, 0, 0])  # Red for Gaussians
+
+    rotation_matrix = R.from_euler('xyz', [r_x, r_y, r_z], degrees=True).as_matrix()
+    rotation_4x4 = np.eye(4)
+    rotation_4x4[:3, :3] = rotation_matrix
+    translation_4x4 = np.eye(4)
+    translation_4x4[:3, 3] = [t_x, t_y, t_z]
+
+    pred_pcd.transform(rotation_4x4)
+    pred_pcd.transform(translation_4x4)
+    
+    # --- Automatic Alignment Using ICP ---
+    print("Starting automatic alignment...")
+    dTau = 0.005
+    trajectory_transform = np.eye(4)
+
+    # Perform coarse alignment
+    r2 = registration_vol_ds(pred_pcd, pcd_gt, trajectory_transform, dTau, dTau * 50, 100)
+    print("Stage 2 transformation:\n", r2.transformation)
+
+    # Apply the transformation
+    pcd_aligned = pred_pcd.transform(r2.transformation)
+
+    # --- Extract Transformed XYZ to PyTorch Tensor ---
+    transformed_xyz = np.asarray(pcd_aligned.points)  # Convert to NumPy array
+    transformed_tensor = torch.tensor(transformed_xyz, dtype=torch.float32)  # Convert to PyTorch tensor
+    print("Extracted transformed XYZ coordinates into a tensor:", transformed_tensor.shape)
+
+    return transformed_tensor
+
+
+def registration_vol_ds(source, target, init_transformation, dTau, threshold, iterations):
+    s_down = source.voxel_down_sample(dTau)
+    t_down = target.voxel_down_sample(dTau)
+    t_down.estimate_normals(
+        o3d.geometry.KDTreeSearchParamHybrid(radius=0.3, max_nn=30)
+    )
+    reg = o3d.pipelines.registration.registration_icp(
+        s_down, t_down, threshold, init_transformation,
+        o3d.pipelines.registration.TransformationEstimationPointToPlane(),
+        o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=iterations)
+    )
+    reg.transformation = reg.transformation @ init_transformation
+    return reg
