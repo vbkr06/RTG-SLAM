@@ -112,7 +112,7 @@ def save_colored_ply(frame_id, means_xyz, assignments, cluster_lang_feat, datase
     means_xyz = means_xyz.cpu().numpy()
     assignments = assignments.cpu().numpy()
     N, C = assignments.shape
-    assignments = assignments.argmax(dim=1)
+    assignments = assignments.argmax(axis=1)
     class_names, text_features = load_text_embeddings(dataset)
     cluster_best_label_ids = label_cluster_features(cluster_lang_feat, text_features, device="cuda")
     
@@ -133,7 +133,7 @@ def save_colored_ply(frame_id, means_xyz, assignments, cluster_lang_feat, datase
     # Apply colors to points
     all_colors = np.zeros((N, 3))
     for c in range(C):
-        inds = np.where(assignments[c])[0]
+        inds = np.where(assignments == c)[0]
         if len(inds) > 0:
             all_colors[inds] = cluster_colors[c]
     

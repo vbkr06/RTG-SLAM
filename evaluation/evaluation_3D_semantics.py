@@ -171,7 +171,7 @@ def evaluate_3D_semantics(xyz, assignments, cluster_lang_feat, dataset_params):
     dataset_dir = dataset_params.source_path
     dataset = dataset_params.type
     scene_name = os.path.basename(dataset_dir)
-    output_dir = './output/'
+    output_dir = '/mnt/scratch/cluster_simple_ply'
 
     # target_id_mapping = {}
     # for new_idx, old_label in enumerate(NYU40.keys(), start=1):
@@ -220,19 +220,19 @@ def evaluate_3D_semantics(xyz, assignments, cluster_lang_feat, dataset_params):
             f"Overall Acc={accuracy:.4f}, "
             f"MeanClassAcc={mean_class_accuracy:.4f}")
 
-    # ###
-    # unlabeled_mask = (new_labels == 0)
-    # correct_mask   = (new_labels == pred_labels) & ~unlabeled_mask
-    # colors = np.zeros((points.shape[0], 3), dtype=np.float32)  # default is black (0,0,0)
+    ###
+    unlabeled_mask = (pred_labels == 0)
+    correct_mask   = (pred_labels == pred_labels) & ~unlabeled_mask
+    colors = np.zeros((gt_points.shape[0], 3), dtype=np.float32)  # default is black (0,0,0)
 
     # correct predictions (green)
-    # colors[correct_mask] = [0.0, 1.0, 0.0]   # green
+    colors[correct_mask.cpu()] = [0.0, 1.0, 0.0]   # green
 
     # incorrect (red)
-    # incorrect_mask = (~correct_mask) & (~unlabeled_mask)
-    # colors[incorrect_mask] = [1.0, 0.0, 0.0]  # red
-    # output_ply = f"{output_dir}/{scene_name}_prediction_visual.ply"
-    # save_colored_ply(output_ply, points, colors)
+    incorrect_mask = (~correct_mask) & (~unlabeled_mask)
+    colors[incorrect_mask.cpu()] = [1.0, 0.0, 0.0]  # red
+    output_ply = f"{output_dir}/{scene_name}_prediction.ply"
+    save_colored_ply(output_ply, gt_points, colors)
 
 def align_to_gt(xyz, gt_xyz, scene_name):
     # manual initial guess (r_x, r_y, r_z, t_x, t_y, t_z)

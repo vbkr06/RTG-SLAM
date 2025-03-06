@@ -171,7 +171,7 @@ class Mapping(object):
         #         vis_caption =  f"visualization/{run_desc}/visualization_global/opt_round{(int)(frame_id / self.cluster_frequency)}_"
         #         self.semantic_clustering(random_frame, random_index, random_frame_map, sam_masks, rend_clusters, mask_lang_feat, vis_caption)
         
-        if (frame_id % 40 == 0 or frame_id == num_frames - 2) and frame_id != 0: 
+        if (frame_id % 400 == 0 or frame_id == num_frames - 2) and frame_id != 0: 
             cluster_lang_feat = self.get_cluster_language_features(mask_lang_feat, self.stable_assignments.shape[1]) 
            
             save_colored_ply(
@@ -182,7 +182,7 @@ class Mapping(object):
                 dataset=dataset_params.type)
             
             evaluate_3D_semantics(self.stable_params["xyz"], 
-                                  self.stable_assignments.argmax(dim=1), 
+                                  self.stable_assignments.argmax(axis=1), 
                                   self.get_cluster_language_features(mask_lang_feat, self.stable_assignments.shape[1]), 
                                   dataset_params)
 
