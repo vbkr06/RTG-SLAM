@@ -215,22 +215,39 @@ def evaluate_3D_semantics(xyz, assignments, cluster_lang_feat, dataset_params):
     # pred_labels_t = torch.from_numpy(pred_labels).long().cuda()
 
     # Calculate metrics
-    _, mean_iou, accuracy, mean_class_accuracy = calculate_metrics(gt_labels, pred_labels)
-    print(f"[{scene_name}] mIoU={mean_iou:.4f}, "
-            f"Overall Acc={accuracy:.4f}, "
-            f"MeanClassAcc={mean_class_accuracy:.4f}")
+    ious, mean_iou, accuracy, mean_class_accuracy = calculate_metrics(gt_labels, pred_labels)
+    result_str = f"[{scene_name}] mIoU={mean_iou:.4f}, Overall Acc={accuracy:.4f}, MeanClassAcc={mean_class_accuracy:.4f}\n"
+    print(result_str)
+    with open("metrics.txt", "a") as f:
+        f.write(result_str)
+        present_classes = torch.unique(gt_labels.cpu())
+        present_classes = [int(cls) for cls in present_classes if int(cls) != 0]
+        class_iou_list = []
+        for cls in present_classes:
+            iou_val = ious[cls].item()
+            class_name = text_labels[cls - 1] if cls - 1 < len(text_labels) else f"Class {cls}"
+            class_iou_list.append((class_name, iou_val))
+        class_iou_list.sort(key=lambda x: x[1], reverse=True)
+        for class_name, iou_val in class_iou_list:
+            f.write(f"{class_name} IoU: {iou_val:.4f}\n")
 
     ###
-    unlabeled_mask = (pred_labels == 0)
-    correct_mask   = (pred_labels == pred_labels) & ~unlabeled_mask
+    pred_labels_np = pred_labels.cpu().numpy()
+    gt_labels_np = gt_labels.cpu().numpy()
+
+    # Create boolean masks using the NumPy array.
+    unlabeled_mask = (pred_labels_np == 0)
+    correct_mask   = (pred_labels_np == gt_labels_np) & ~unlabeled_mask
+
     colors = np.zeros((gt_points.shape[0], 3), dtype=np.float32)  # default is black (0,0,0)
 
-    # correct predictions (green)
-    colors[correct_mask.cpu()] = [0.0, 1.0, 0.0]   # green
+    # Correct predictions (green)
+    colors[correct_mask] = [0.0, 1.0, 0.0]
 
-    # incorrect (red)
+    # Incorrect predictions (red)
     incorrect_mask = (~correct_mask) & (~unlabeled_mask)
-    colors[incorrect_mask.cpu()] = [1.0, 0.0, 0.0]  # red
+    colors[incorrect_mask] = [1.0, 0.0, 0.0]
+
     output_ply = f"{output_dir}/{scene_name}_prediction.ply"
     save_colored_ply(output_ply, gt_points, colors)
 

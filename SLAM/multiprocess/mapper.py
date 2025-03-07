@@ -17,7 +17,8 @@ from utils.monitor import Recorder
 from utils.general_utils import calculate_iou
 from clustering.association_visualizer import plot_cluster_language_association, plot_single_cluster
 import torch.nn.functional as F
-import matplotlib.pyplot as plt
+from utils.camera_utils import loadCam
+
 
 from evaluation.color_objects import save_colored_ply
 from evaluation.evaluation_3D_semantics import evaluate_3D_semantics
@@ -171,7 +172,7 @@ class Mapping(object):
         #         vis_caption =  f"visualization/{run_desc}/visualization_global/opt_round{(int)(frame_id / self.cluster_frequency)}_"
         #         self.semantic_clustering(random_frame, random_index, random_frame_map, sam_masks, rend_clusters, mask_lang_feat, vis_caption)
         
-        if (frame_id % 400 == 0 or frame_id == num_frames - 2) and frame_id != 0: 
+        if (frame_id % 400 == 0) and frame_id != 0: 
             cluster_lang_feat = self.get_cluster_language_features(mask_lang_feat, self.stable_assignments.shape[1]) 
            
             save_colored_ply(
@@ -183,18 +184,68 @@ class Mapping(object):
             
             evaluate_3D_semantics(self.stable_params["xyz"], 
                                   self.stable_assignments.argmax(axis=1), 
-                                  self.get_cluster_language_features(mask_lang_feat, self.stable_assignments.shape[1]), 
+                                  cluster_lang_feat, 
                                   dataset_params)
 
         move_to_cpu(frame)
 
+    def do_final_semantics(self, dataset, dataset_params, sam_masks, mask_lang_feat):
+        # Get the height and width from the first mask.
+        H, W = sam_masks[0][0].size()
+
+        # Prepare the stable parameters.
+        global_par_curr_frame = self.global_params
+        # stable_par = {key: global_par_curr_frame[key][self.pointcloud.get_points_num:] for key in global_par_curr_frame}
+        
+        # Prepare the final assignments tensor.
+        final_assignments = torch.zeros((global_par_curr_frame['xyz'].size(0), self.stable_assignments.size(1)))
+        
+        # Build a mapping from frame_id to a list of (cluster_id, mask_id) tuples.
+        frame_to_clusters = {}
+        for cluster_id, associated_masks in self.cluster_masks.items():
+            for frame_id, mask_id in associated_masks:
+                frame_to_clusters.setdefault(frame_id, []).append((cluster_id, mask_id))
+        
+        # Process one frame at a time.
+        with tqdm(total=len(dataset.scene_info.train_cameras), desc="rendering") as pbar:
+            for frame_id, frame_info in enumerate(dataset.scene_info.train_cameras):
+                curr_frame = loadCam(
+                    dataset_params, frame_id, frame_info, dataset_params.resolution_scales[0]
+                )
+                move_to_gpu(curr_frame)
+                
+                render_output = self.renderer.render(curr_frame, global_par_curr_frame)
+                # The rendered depth_index_map for the current frame.
+                depth_index_map = render_output['depth_index_map'][0]  # shape: (H, W)
+                
+                # If there are any cluster assignments associated with this frame, process them.
+                if frame_id in frame_to_clusters:
+                    for (cluster_id, mask_id) in frame_to_clusters[frame_id]:
+                        # Get the mask and make sure it's on the same device as the depth_index_map.
+                        mask = sam_masks[frame_id][mask_id].to(depth_index_map.device)
+                        # Find the unique indices where the mask is True.
+                        participating_gaussians = torch.unique(depth_index_map[mask])
+                        # Consider only valid indices (greater than 0).
+                        participating_gaussians = participating_gaussians[participating_gaussians > 0]
+                        # Update the final assignments.
+                        final_assignments[participating_gaussians.cpu().long(), cluster_id] += 1
+                        
+                pbar.update(1)
+
+        # Update the stable assignments.
+        self.stable_assignments = final_assignments        
+        
+        evaluate_3D_semantics(self.global_params["xyz"], 
+                            self.get_oneD_assignments(), 
+                            self.get_cluster_language_features(mask_lang_feat, self.stable_assignments.shape[1]), 
+                            dataset_params)
 
     def gaussians_add(self, frame):
         self.temp_points_init(frame)
         self.temp_points_filter()
         self.temp_points_attach(frame)
         self.temp_to_optimize()
-        
+ 
     ###
     def add_gaussians_assignments(self, assignments, num_new):
         if assignments is None:
@@ -1388,6 +1439,26 @@ class Mapping(object):
             cluster_lang_features[cluster_idx] = all_features_curr_cluster[best_index]
             
         return cluster_lang_features  
+
+    def get_merged_cluster_language_features(self, mask_language_features, num_clusters):
+        cluster_lang_features = torch.zeros((num_clusters, 512), device='cuda')
+        num_samples = 50
+        for cluster_idx, all_mask_infos in self.cluster_masks.items():
+            num_masks = len(all_mask_infos)
+            sampled_masks = random.sample(all_mask_infos, min(num_samples, num_masks))
+            features = []
+            for (mask_time_idx, mask_index) in sampled_masks:
+                feat = mask_language_features[mask_time_idx][mask_index]
+                features.append(feat.unsqueeze(0))
+            features = torch.stack(features).squeeze(1)
+            similarity = features @ features.T
+            attention_weights = F.softmax(similarity, dim=-1)
+            fused_feature = attention_weights @ features
+            fused_feature = fused_feature.mean(dim=0)
+            fused_feature = fused_feature / fused_feature.norm()
+            cluster_lang_features[cluster_idx] = fused_feature
+        return cluster_lang_features
+
 
     def get_point_subset(self, indices):
         global_params = self.global_params 
