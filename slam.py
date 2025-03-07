@@ -152,6 +152,8 @@ def main():
     new_poses = gaussian_tracker.get_new_poses()
     gaussian_map.update_poses(new_poses)
     gaussian_map.global_optimization(optimization_params, is_end=True)
+    gaussian_map.do_final_semantics(dataset, dataset_params, sam_masks, mask_language_features)
+   
     eval_frame(
         gaussian_map,
         gaussian_map.keyframe_list[-1],
