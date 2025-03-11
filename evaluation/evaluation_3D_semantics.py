@@ -381,7 +381,7 @@ import argparse
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate 3D Semantics from saved evaluation data.")
-    parser.add_argument("--data_file", type=str, required=True, default="/mnt/projects/3Dsemantic.pt",
+    parser.add_argument("--data_file", type=str, default="/mnt/projects/FeatureGSLAM/Replica/room0/evaluation/3Dsemantic.pt",
                         help="Path to the saved evaluation data file (e.g. /mnt/scratch/cluster_evaluation_data.pt).")
     args = parser.parse_args()
 
