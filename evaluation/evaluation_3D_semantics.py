@@ -123,24 +123,69 @@ def calculate_metrics(gt, pred):
 
     return ious, mean_iou, accuracy, mean_class_accuracy
 
-def label_cluster_features(cluster_lang_features, label_features, device="cuda:0"):
+# def label_cluster_features(cluster_lang_features, label_features, device="cuda:0"):
+#     label_features = label_features.to(device)
+#     cluster_lang_features_tensor = cluster_lang_features.half().to(device)
+#     label_features = F.normalize(label_features, p=2, dim=1)
+#     cluster_features_normalized = F.normalize(cluster_lang_features_tensor, p=2, dim=1)
+
+#     similarities = cluster_features_normalized @ label_features.t()
+
+#     cluster_best_label_ids = torch.argmax(similarities, dim=1)
+#     return cluster_best_label_ids
+
+def label_cluster_features_batched(cluster_lang_features, label_features, batch_size=10, device="cuda:0"):
     label_features = label_features.to(device)
-    cluster_lang_features_tensor = cluster_lang_features.half().to(device)
+    cluster_lang_features = cluster_lang_features.half().to(device)
+    
+    # Normalize label features once
     label_features = F.normalize(label_features, p=2, dim=1)
-    cluster_features_normalized = F.normalize(cluster_lang_features_tensor, p=2, dim=1)
 
-    similarities = cluster_features_normalized @ label_features.t()
+    num_clusters = cluster_lang_features.shape[0]
+    cluster_best_label_ids = torch.empty(num_clusters, dtype=torch.long, device=device)
 
-    cluster_best_label_ids = torch.argmax(similarities, dim=1)
+    for start in range(0, num_clusters, batch_size):
+        end = min(start + batch_size, num_clusters)
+
+        # Extract batch and normalize
+        cluster_batch = cluster_lang_features[start:end]
+        cluster_batch = F.normalize(cluster_batch, p=2, dim=1)
+
+        # Compute similarities
+        similarities = cluster_batch @ label_features.T
+
+        # Get best labels
+        cluster_best_label_ids[start:end] = torch.argmax(similarities, dim=1)
+
     return cluster_best_label_ids
 
-def load_text_embeddings(labels):
+
+# def load_text_embeddings(labels):
+#     clip_model, _ = clip.load("ViT-B/32", device="cuda")
+#     text_prompts = labels
+#     text_tokens = clip.tokenize(text_prompts).cuda()
+#     with torch.no_grad():
+#         text_features = clip_model.encode_text(text_tokens)
+#         text_features = text_features / text_features.norm(dim=-1, keepdim=True)  
+#     return text_features
+
+def load_text_embeddings(labels, batch_size=32):
     clip_model, _ = clip.load("ViT-B/32", device="cuda")
-    text_prompts = labels
-    text_tokens = clip.tokenize(text_prompts).cuda()
+    clip_model.eval()
+    
+    all_features = []
     with torch.no_grad():
-        text_features = clip_model.encode_text(text_tokens)
-        text_features = text_features / text_features.norm(dim=-1, keepdim=True)  
+        # Process labels in batches.
+        for i in range(0, len(labels), batch_size):
+            batch = labels[i:i+batch_size]
+            text_tokens = clip.tokenize(batch).to("cuda")
+            text_features = clip_model.encode_text(text_tokens)
+            # Normalize the text features.
+            text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+            all_features.append(text_features)
+    
+    # Concatenate all batched features.
+    text_features = torch.cat(all_features, dim=0)
     return text_features
 
 def save_colored_ply(filepath, xyz, rgb):
@@ -196,7 +241,7 @@ def evaluate_3D_semantics(xyz, assignments, cluster_lang_feat, dataset_params):
     print(f"[{scene_name}] Loaded {gt_points.shape[0]} vertices. Max label={gt_labels.max()}")
 
     label_feat = load_text_embeddings(text_labels)
-    cluster_to_label = label_cluster_features(cluster_lang_feat, label_feat) + 1
+    cluster_to_label = label_cluster_features_batched(cluster_lang_feat, label_feat) + 1
     labeled_assignments = cluster_to_label[assignments]
    
     aligned_xyz = align_to_gt(xyz.cpu(), gt_points, scene_name)
@@ -317,3 +362,38 @@ def registration_vol_ds(source, target, init_transformation, dTau, threshold, it
     )
     reg.transformation = reg.transformation @ init_transformation
     return reg
+
+
+def save_evaluation_data(stable_xyz, stable_assignments, oneD_assignments, cluster_lang_feat, dataset_params, save_path):
+    data = {
+        "xyz": stable_xyz.cpu() if hasattr(stable_xyz, "cpu") else stable_xyz,
+        "stable_assignments": stable_assignments.cpu() if hasattr(stable_assignments, "cpu") else stable_assignments,
+        "oneD_assignments": oneD_assignments.cpu() if hasattr(oneD_assignments, "cpu") else oneD_assignments,
+        "cluster_lang_feat": cluster_lang_feat.cpu() if hasattr(cluster_lang_feat, "cpu") else cluster_lang_feat,
+        "dataset": dataset_params
+    }
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    torch.save(data, save_path)
+    print(f"Saved evaluation data to {save_path}")
+
+
+import argparse
+
+def main():
+    parser = argparse.ArgumentParser(description="Evaluate 3D Semantics from saved evaluation data.")
+    parser.add_argument("--data_file", type=str, required=True, default="/mnt/projects/3Dsemantic.pt",
+                        help="Path to the saved evaluation data file (e.g. /mnt/scratch/cluster_evaluation_data.pt).")
+    args = parser.parse_args()
+
+    data = torch.load(args.data_file)
+    print(f"Loaded evaluation data from {args.data_file}")
+
+    xyz = data["xyz"]
+    assignments = data["oneD_assignments"]  
+    cluster_lang_feat = data["cluster_lang_feat"]
+    dataset_params = data["dataset"]  
+
+    evaluate_3D_semantics(xyz, assignments, cluster_lang_feat, dataset_params)
+
+if __name__ == "__main__":
+    main()

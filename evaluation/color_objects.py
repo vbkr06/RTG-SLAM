@@ -106,17 +106,23 @@ def get_cluster_language_features(cluster_masks, mask_language_features, num_clu
 #     print(f"Saved cluster .ply files to {ply_dir}")
 
 
-
-def save_colored_ply(frame_id, means_xyz, assignments, cluster_lang_feat, dataset="Scannetpp", ply_dir="/mnt/scratch/cluster_simple_ply"):
+def save_colored_ply(frame_id, means_xyz, assignments, oneD_assignments, cluster_lang_feat, dataset="Scannetpp", ply_dir="/mnt/scratch/cluster_simple_ply"):
     os.makedirs(ply_dir, exist_ok=True)
+    
+    # Convert tensors to numpy arrays.
     means_xyz = means_xyz.cpu().numpy()
     assignments = assignments.cpu().numpy()
+    
+    # Get the shape and compute cluster assignment per point.
     N, C = assignments.shape
-    assignments = assignments.argmax(axis=1)
+    # Convert per-point assignment scores to discrete cluster indices.
+    assignments = oneD_assignments.cpu().numpy()
+    
+    # Load text embeddings (labels) for the dataset.
     class_names, text_features = load_text_embeddings(dataset)
     cluster_best_label_ids = label_cluster_features(cluster_lang_feat, text_features, device="cuda")
     
-    # # Create a mapping from label ID to color, ensuring same labels get same colors
+    # Create a mapping from label ID to color.
     if dataset == 'Scannetpp':
         np.random.seed(42)
         cluster_colors = np.random.randint(0, 255, (C, 3), dtype=np.uint8) / 255.0
@@ -129,15 +135,15 @@ def save_colored_ply(frame_id, means_xyz, assignments, cluster_lang_feat, datase
         for c in range(C):
             label_id = cluster_best_label_ids[c].item()
             cluster_colors[c] = label_to_color[label_id]
-        
-    # Apply colors to points
+    
+    # Apply colors to each point based on its cluster assignment.
     all_colors = np.zeros((N, 3))
     for c in range(C):
         inds = np.where(assignments == c)[0]
         if len(inds) > 0:
             all_colors[inds] = cluster_colors[c]
     
-    # Create point cloud
+    # Create and save the colored point cloud.
     total_pcd = o3d.geometry.PointCloud()
     total_pcd.points = o3d.utility.Vector3dVector(means_xyz)
     total_pcd.colors = o3d.utility.Vector3dVector(all_colors)
@@ -145,20 +151,21 @@ def save_colored_ply(frame_id, means_xyz, assignments, cluster_lang_feat, datase
     ply_filename = os.path.join(ply_dir, f"complete_scene_{frame_id}.ply")
     o3d.io.write_point_cloud(ply_filename, total_pcd)
     
-    # Create legend based on label IDs, not cluster IDs
-    legend_items = {}  # Use a dict to avoid duplicates for the same label
-    for c in range(C):
-        if np.sum(assignments[c]) > 0:
-            label_idx = cluster_best_label_ids[c].item()
-            class_name = class_names[label_idx]
-            # Only add this label once to the legend
-            if class_name not in legend_items:
-                legend_items[class_name] = (label_idx, cluster_colors[c])
+    # Create legend based on unique clusters present in the scene.
+    legend_items = {}  # Mapping from class name to (label_id, color)
+    unique_cluster_ids = np.unique(assignments)
+    for c in unique_cluster_ids:
+        label_idx = cluster_best_label_ids[c].item()
+        class_name = class_names[label_idx]
+        # Only add this label once to the legend.
+        if class_name not in legend_items:
+            legend_items[class_name] = (label_idx, cluster_colors[c])
     
-    # Convert to lists for plotting
+    # Convert legend information into lists for plotting.
     legend_labels = [f"{class_name} (Label ID: {label_idx})" for class_name, (label_idx, _) in legend_items.items()]
     legend_colors = [color for _, (_, color) in legend_items.items()]
     
+    # Plot and save the legend.
     _, ax = plt.subplots(figsize=(6, len(legend_labels)*0.4))
     ax.set_xlim(0, 1)
     ax.set_ylim(0, len(legend_labels))
@@ -168,8 +175,109 @@ def save_colored_ply(frame_id, means_xyz, assignments, cluster_lang_feat, datase
     ax.set_xticks([])
     ax.set_yticks([])
     ax.set_frame_on(False)
+    
     legend_filename = os.path.join(ply_dir, f"legend.png")
     plt.savefig(legend_filename, dpi=300, bbox_inches='tight')
     plt.close()
+    
     print(f"Saved complete scene to {ply_filename}")
     print(f"Saved legend to {legend_filename}")
+
+    ##########
+
+
+def plot_clusters(assignments, means_xyz, ply_dir="/mnt/scratch/cluster_simple_ply"):
+    
+    os.makedirs(ply_dir, exist_ok=True)
+    N, C = assignments.shape
+    np.random.seed(42)
+    # Generate a unique color for each cluster.
+    cluster_colors = np.random.randint(0, 255, (C, 3), dtype=np.uint8) / 255.0
+    assignments_np = assignments.cpu().numpy()
+    means_xyz = means_xyz.cpu().numpy()
+
+    for c in range(C):
+        # For each cluster, select points where the column is nonzero.
+        column = assignments_np[:, c]
+        inds = np.where(column != 0)[0]
+        if len(inds) == 0:
+            continue
+        matched_means3D = means_xyz[inds]
+        # Use the cluster color for all points in this cluster.
+        matched_colors = np.tile(cluster_colors[c], (len(inds), 1))
+        
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(matched_means3D)
+        pcd.colors = o3d.utility.Vector3dVector(matched_colors)
+        
+        cluster_filename = os.path.join(ply_dir, f"cluster_{c}.ply")
+        o3d.io.write_point_cloud(cluster_filename, pcd)
+        print(f"Saved cluster {c} to {cluster_filename}")
+
+
+# def save_colored_ply(frame_id, means_xyz, assignments, cluster_lang_feat, dataset="Scannetpp", ply_dir="/mnt/scratch/cluster_simple_ply"):
+    # os.makedirs(ply_dir, exist_ok=True)
+    # means_xyz = means_xyz.cpu().numpy()
+    # assignments = assignments.cpu().numpy()
+    # N, C = assignments.shape
+    # assignments = assignments.argmax(axis=1)
+    # class_names, text_features = load_text_embeddings(dataset)
+    # cluster_best_label_ids = label_cluster_features(cluster_lang_feat, text_features, device="cuda")
+    
+    # # # Create a mapping from label ID to color, ensuring same labels get same colors
+    # if dataset == 'Scannetpp':
+    #     np.random.seed(42)
+    #     cluster_colors = np.random.randint(0, 255, (C, 3), dtype=np.uint8) / 255.0
+    # elif dataset == "Replica":
+    #     label_to_color = {
+    #         label_id.item(): np.array(LABEL_TO_COLOR[OVOSLAM_COLORED_LABELS[label_id]]) / 255.0
+    #         for label_id in cluster_best_label_ids
+    #     }
+    #     cluster_colors = np.zeros((C, 3))
+    #     for c in range(C):
+    #         label_id = cluster_best_label_ids[c].item()
+    #         cluster_colors[c] = label_to_color[label_id]
+        
+    # # Apply colors to points
+    # all_colors = np.zeros((N, 3))
+    # for c in range(C):
+    #     inds = np.where(assignments == c)[0]
+    #     if len(inds) > 0:
+    #         all_colors[inds] = cluster_colors[c]
+    
+    # # Create point cloud
+    # total_pcd = o3d.geometry.PointCloud()
+    # total_pcd.points = o3d.utility.Vector3dVector(means_xyz)
+    # total_pcd.colors = o3d.utility.Vector3dVector(all_colors)
+    
+    # ply_filename = os.path.join(ply_dir, f"complete_scene_{frame_id}.ply")
+    # o3d.io.write_point_cloud(ply_filename, total_pcd)
+    
+    # # Create legend based on label IDs, not cluster IDs
+    # legend_items = {}  # Use a dict to avoid duplicates for the same label
+    # for c in range(C):
+    #     if np.sum(assignments[c]) > 0:
+    #         label_idx = cluster_best_label_ids[c].item()
+    #         class_name = class_names[label_idx]
+    #         # Only add this label once to the legend
+    #         if class_name not in legend_items:
+    #             legend_items[class_name] = (label_idx, cluster_colors[c])
+    
+    # # Convert to lists for plotting
+    # legend_labels = [f"{class_name} (Label ID: {label_idx})" for class_name, (label_idx, _) in legend_items.items()]
+    # legend_colors = [color for _, (_, color) in legend_items.items()]
+    
+    # _, ax = plt.subplots(figsize=(6, len(legend_labels)*0.4))
+    # ax.set_xlim(0, 1)
+    # ax.set_ylim(0, len(legend_labels))
+    # for i, (lbl, col) in enumerate(zip(legend_labels, legend_colors)):
+    #     ax.add_patch(plt.Rectangle((0, i), 1, 1, color=col, ec='black'))
+    #     ax.text(1.05, i+0.5, lbl, va='center', fontsize=12)
+    # ax.set_xticks([])
+    # ax.set_yticks([])
+    # ax.set_frame_on(False)
+    # legend_filename = os.path.join(ply_dir, f"legend.png")
+    # plt.savefig(legend_filename, dpi=300, bbox_inches='tight')
+    # plt.close()
+    # print(f"Saved complete scene to {ply_filename}")
+    # print(f"Saved legend to {legend_filename}")

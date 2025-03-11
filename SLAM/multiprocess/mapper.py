@@ -20,8 +20,8 @@ import torch.nn.functional as F
 from utils.camera_utils import loadCam
 
 
-from evaluation.color_objects import save_colored_ply
-from evaluation.evaluation_3D_semantics import evaluate_3D_semantics
+from evaluation.color_objects import save_colored_ply, plot_clusters
+from evaluation.evaluation_3D_semantics import evaluate_3D_semantics, save_evaluation_data
 
 class Mapping(object):
     def __init__(self, args, recorder=None) -> None:
@@ -159,31 +159,43 @@ class Mapping(object):
         self.cluster_frames_window.append(frame)
         self.cluster_maps_windwos.append(frame_map) 
         # self.processed_map
-        # if frame_id % self.cluster_frequency == 0 and frame_id != 0:
-        #     for _ in range(self.cluster_iter):  
-        #         # frame_id == 50
-        #         # queue_size = 5
-        #         # window_size = 5
-        #         # random_index = rand(45, 50) -> 46
-        #         # rand_frame = queue[0]
-        #         random_index = random.randint(max(0, frame_id - self.cluster_window_size + 1), frame_id)
-        #         random_frame = self.cluster_frames_window[min(frame_id, self.cluster_window_size - 1) - (frame_id - random_index)]
-        #         random_frame_map = self.cluster_maps_windwos[min(frame_id, self.cluster_window_size - 1) - (frame_id - random_index)]
-        #         vis_caption =  f"visualization/{run_desc}/visualization_global/opt_round{(int)(frame_id / self.cluster_frequency)}_"
-        #         self.semantic_clustering(random_frame, random_index, random_frame_map, sam_masks, rend_clusters, mask_lang_feat, vis_caption)
+        if frame_id % self.cluster_frequency == 0 and frame_id != 0:
+            for _ in range(self.cluster_iter):  
+                # frame_id == 50
+                # queue_size = 5
+                # window_size = 5
+                # random_index = rand(45, 50) -> 46
+                # rand_frame = queue[0]
+                random_index = random.randint(max(0, frame_id - self.cluster_window_size + 1), frame_id)
+                random_frame = self.cluster_frames_window[min(frame_id, self.cluster_window_size - 1) - (frame_id - random_index)]
+                random_frame_map = self.cluster_maps_windwos[min(frame_id, self.cluster_window_size - 1) - (frame_id - random_index)]
+                vis_caption =  f"visualization/{run_desc}/visualization_global/opt_round{(int)(frame_id / self.cluster_frequency)}_"
+                self.semantic_clustering(random_frame, random_index, random_frame_map, sam_masks, rend_clusters, mask_lang_feat, vis_caption)
         
+        if (frame_id % 71 == 0) and frame_id > 11:
+            plot_clusters(self.stable_assignments, self.stable_params["xyz"])
+
         if (frame_id % 200 == 0) and frame_id != 0: 
             cluster_lang_feat = self.get_cluster_language_features(mask_lang_feat, self.stable_assignments.shape[1]) 
-           
+            #     )
             save_colored_ply(
                 frame_id,
                 self.stable_params["xyz"],
                 self.stable_assignments,
+                self.get_oneD_assignments(),
                 cluster_lang_feat,
                 dataset=dataset_params.type)
+            save_evaluation_data(
+                self.stable_params["xyz"],
+                self.stable_assignments,
+                self.get_oneD_assignments(),
+                cluster_lang_feat,
+                dataset_params,
+                "/mnt/projects/FeatureGSLAM/Replica/room0/evaluation/3Dsemantic.pt")
             
             evaluate_3D_semantics(self.stable_params["xyz"], 
-                                  self.stable_assignments.argmax(axis=1), 
+                                 # self.stable_assignments.argmax(axis=1), 
+                                  self.get_oneD_assignments(),
                                   cluster_lang_feat, 
                                   dataset_params)
 
@@ -1091,13 +1103,31 @@ class Mapping(object):
         else:
             self.tb_writer = None
     
+    # def get_oneD_assignments(self):
+    #     num_gaussians, num_clusters = self.stable_assignments.shape
+    #     gaussian_to_cluster = torch.full((num_gaussians,), -1, dtype=torch.int64, device=self.stable_assignments.device)
+
+    #     for c in range(num_clusters):
+    #         cluster_indices = torch.nonzero(self.stable_assignments[:, c], as_tuple=True)[0] 
+    #         gaussian_to_cluster[cluster_indices] = c  
+
+    #     return gaussian_to_cluster
+    
     def get_oneD_assignments(self):
         num_gaussians, num_clusters = self.stable_assignments.shape
         gaussian_to_cluster = torch.full((num_gaussians,), -1, dtype=torch.int64, device=self.stable_assignments.device)
-
-        for c in range(num_clusters):
-            cluster_indices = torch.nonzero(self.stable_assignments[:, c], as_tuple=True)[0] 
-            gaussian_to_cluster[cluster_indices] = c  
+        
+        # Compute the count of gaussians per cluster.
+        counts = self.stable_assignments.sum(dim=0)  # shape: (num_clusters,)
+        max_cluster = torch.argmax(counts).item()  # Cluster index with the most gaussians
+        
+        # Create an order: all clusters except the max one, then the max cluster last.
+        cluster_order = [c for c in range(num_clusters) if c != max_cluster] + [max_cluster]
+        
+        # Iterate over the clusters in the new order.
+        for c in cluster_order:
+            cluster_indices = torch.nonzero(self.stable_assignments[:, c], as_tuple=True)[0]
+            gaussian_to_cluster[cluster_indices] = c
 
         return gaussian_to_cluster
 
@@ -1221,7 +1251,7 @@ class Mapping(object):
         
         
         # pixel_to_gaussian_map[0][total_depth_distance.bool()] = -1# = pixel_to_gaussian_map * ~total_depth_distance.bool()    
-        
+
         real_new_masks = []
         # render the clustered gaussians (clustered by the current masks)
         for mask_id in range(num_masks):
@@ -1327,7 +1357,7 @@ class Mapping(object):
             dim=-1
         )
         # compute ious between rendered cluster areas
-        iou_matrix = calculate_iou(rend_old_visible_clusters, rend_new_clusters)
+       # iou_matrix = calculate_iou(rend_old_visible_clusters, rend_new_clusters)
         
         depth_determining = torch.unique(pixel_to_gaussian_map[0]).long()
         depth_determining = depth_determining[depth_determining >= 0]
@@ -1337,35 +1367,37 @@ class Mapping(object):
         
         # get combined similarity matrix
         #combined_matrix = 2 * cossim_matrix + iou_matrix.cuda()
-        combined_matrix = cossim_matrix + iou3d_matrix_b
+        #combined_matrix = cossim_matrix + iou3d_matrix_b
         # get best matching old cluster for each new cluster/mask
-        max_score_per_new_cluster, max_ind_per_new_cluster = combined_matrix.max(dim=1)
+        max_cossim_per_new_cluster, max_cossim_ind = cossim_matrix.max(dim=1)
+        max_score_per_new_cluster, max_ind_per_new_cluster = iou3d_matrix_b.max(dim=1) #combined_matrix.max(dim=1)
         
         if torch.unique(max_ind_per_new_cluster).size(0) != max_ind_per_new_cluster.size(0):
             print("error")
         
         new_clusters_created = []
         
+        threshold = 0.4
         for i in range(num_new_clusters):
-            
+            score_cossim = max_cossim_per_new_cluster[i]
             score_curr_new_cluster = max_score_per_new_cluster[i]
             matched_old_vis_cluster_ind = max_ind_per_new_cluster[i]
             matched_old_cluster_ind = visible_clusters_ind[matched_old_vis_cluster_ind]
             
-            if score_curr_new_cluster >= 1.6:#self.cluster_matching_threshold:
-                bool_old = rend_old_visible_clusters[matched_old_vis_cluster_ind]
-                bool_old = bool_old & (pixel_to_gaussian_map[0] == cluster_wise_gaussian_mapping[matched_old_vis_cluster_ind.item()][cluster_wise_gaussian_contr[matched_old_vis_cluster_ind].cpu().long()])
-                bool_new = rend_new_clusters[i]
-                # participating_old = torch.unique(pixel_to_gaussian_map[0][(bool_old.cuda() & ~bool_new.cuda())])
-                participating_old = torch.unique(cluster_wise_gaussian_contr[matched_old_vis_cluster_ind][(bool_old.cuda() & ~bool_new.cuda())])#.cpu()
-                #participating_old = participating_old[participating_old >= self.pointcloud.get_points_num]
-                #participating_old = participating_old - self.pointcloud.get_points_num
-                participating_old = participating_old[participating_old.cpu() != -1]
-                if participating_old.size(0) > 0:
-                    participating_old = participating_old[assignments[participating_old.cpu().long()][:,matched_old_cluster_ind] < 5]
+            if score_curr_new_cluster >= threshold or (score_curr_new_cluster > 0 and score_cossim > 0.9):#self.cluster_matching_threshold:
+                # bool_old = rend_old_visible_clusters[matched_old_vis_cluster_ind]
+                # bool_old = bool_old & (pixel_to_gaussian_map[0] == cluster_wise_gaussian_mapping[matched_old_vis_cluster_ind.item()][cluster_wise_gaussian_contr[matched_old_vis_cluster_ind].cpu().long()])
+                # bool_new = rend_new_clusters[i]
+                # # participating_old = torch.unique(pixel_to_gaussian_map[0][(bool_old.cuda() & ~bool_new.cuda())])
+                # participating_old = torch.unique(cluster_wise_gaussian_contr[matched_old_vis_cluster_ind][(bool_old.cuda() & ~bool_new.cuda())])#.cpu()
+                # #participating_old = participating_old[participating_old >= self.pointcloud.get_points_num]
+                # #participating_old = participating_old - self.pointcloud.get_points_num
+                # participating_old = participating_old[participating_old.cpu() != -1]
+                # if participating_old.size(0) > 0:
+                #     participating_old = participating_old[assignments[participating_old.cpu().long()][:,matched_old_cluster_ind] < 5]
             
                 # assignments[cluster_wise_gaussian_mapping[matched_old_vis_cluster_ind.item()][participating_old.long()],matched_old_cluster_ind] = False
-                assignments[cluster_wise_gaussian_mapping[matched_old_vis_cluster_ind.item()][participating_old.cpu().long()],matched_old_cluster_ind] = 0
+                #assignments[cluster_wise_gaussian_mapping[matched_old_vis_cluster_ind.item()][participating_old.cpu().long()],matched_old_cluster_ind] = 0
                 # assignments[:,matched_old_cluster_ind] = assignments[:,matched_old_cluster_ind] | current_assignments[:,i]
                 assignments[:,matched_old_cluster_ind] += current_assignments[:,i]
                 #assignments[participating_old.cpu().long(),matched_old_cluster_ind] = False
@@ -1377,12 +1409,27 @@ class Mapping(object):
             else:
                 if current_assignments[:,i].sum() <= 10:
                     continue
-                new_cluster_id = num_old_clusters + len(new_clusters_created) - 1
+                new_cluster_id = num_old_clusters + len(new_clusters_created)
                 new_clusters_created.append(new_cluster_id)
                 rend_clusters[new_cluster_id] = rend_clusters.pop(num_old_clusters + i)
                 # save masks
                 #self.cluster_masks.setdefault(new_cluster_id, []).append((frame_id, i))
                 self.cluster_masks[new_cluster_id] = [(frame_id, i)]
+                
+                import matplotlib.pyplot as plt
+                mask_tensor = sam_masks[i].cpu()
+                mask_np = mask_tensor.numpy()
+        
+                plt.figure(figsize=(6, 6))
+                plt.imshow(mask_np, cmap="gray")
+                plt.title(f"Mask {i}")
+                plt.axis("off")
+                
+                # Save the figure to the visualization directory.
+                save_path = os.path.join("visualization", f"mask_{i}.png")
+                plt.savefig(save_path, bbox_inches="tight", pad_inches=0.1)
+                plt.close()
+                print(f"Saved mask {i} to {save_path}")
 
         if len(new_clusters_created):
             # if frame_id >= 0:
@@ -1395,7 +1442,7 @@ class Mapping(object):
             
             size_new_clusters = current_assignments.sum(dim=0)
             
-            indices_of_all_unmatched = (max_score_per_new_cluster < 1.4) & (size_new_clusters > 10)#self.cluster_matching_threshold
+            indices_of_all_unmatched = (max_score_per_new_cluster < threshold) & (size_new_clusters > 5)#self.cluster_matching_threshold
             assignments = torch.cat([assignments, current_assignments[:,indices_of_all_unmatched].int()], dim=1)
             
             

@@ -242,7 +242,7 @@ LABEL_TO_COLOR = {
     "desk":        (237,204,37),    
     "floor":       (188,189,34), 
     "cabinet":     (196,156,148),   
-    "sculpture":   (196,156,148),  
+    "sculpture":   (169,137,78),  
     "tv-screen":   (112,128,144),  
 }
 
