@@ -172,7 +172,7 @@ class Mapping(object):
         #         vis_caption =  f"visualization/{run_desc}/visualization_global/opt_round{(int)(frame_id / self.cluster_frequency)}_"
         #         self.semantic_clustering(random_frame, random_index, random_frame_map, sam_masks, rend_clusters, mask_lang_feat, vis_caption)
         
-        if (frame_id % 400 == 0) and frame_id != 0: 
+        if (frame_id % 200 == 0) and frame_id != 0: 
             cluster_lang_feat = self.get_cluster_language_features(mask_lang_feat, self.stable_assignments.shape[1]) 
            
             save_colored_ply(
@@ -1352,7 +1352,7 @@ class Mapping(object):
             matched_old_vis_cluster_ind = max_ind_per_new_cluster[i]
             matched_old_cluster_ind = visible_clusters_ind[matched_old_vis_cluster_ind]
             
-            if score_curr_new_cluster >= 1.4:#self.cluster_matching_threshold:
+            if score_curr_new_cluster >= 1.6:#self.cluster_matching_threshold:
                 bool_old = rend_old_visible_clusters[matched_old_vis_cluster_ind]
                 bool_old = bool_old & (pixel_to_gaussian_map[0] == cluster_wise_gaussian_mapping[matched_old_vis_cluster_ind.item()][cluster_wise_gaussian_contr[matched_old_vis_cluster_ind].cpu().long()])
                 bool_new = rend_new_clusters[i]
@@ -1377,7 +1377,7 @@ class Mapping(object):
             else:
                 if current_assignments[:,i].sum() <= 10:
                     continue
-                new_cluster_id = num_old_clusters + len(new_clusters_created)
+                new_cluster_id = num_old_clusters + len(new_clusters_created) - 1
                 new_clusters_created.append(new_cluster_id)
                 rend_clusters[new_cluster_id] = rend_clusters.pop(num_old_clusters + i)
                 # save masks

@@ -70,13 +70,8 @@ def main():
     # num_frames = 500
     for time_idx in range(num_frames):
         npz_data = np.load(f"{preprocess_path}/{time_idx}_groundedsam.npz")
-        mask_scores = torch.from_numpy(npz_data['mask_scores'])
-        if mask_scores.size(0) > 0:
-            mask_language_features[time_idx] = torch.from_numpy(npz_data['clip'])[torch.where(mask_scores > mask_score_threshold)[0],:]
-            sam_masks[time_idx] = torch.from_numpy(npz_data['masks'])[torch.where(mask_scores > mask_score_threshold)[0],:]
-        else:
-            mask_language_features[time_idx] = torch.empty(0)
-            sam_masks[time_idx] = torch.empty(0)
+        mask_language_features[time_idx] = torch.from_numpy(npz_data['clip'])
+        sam_masks[time_idx] = torch.from_numpy(npz_data['masks'])
         
     # start SLAM
     for frame_id, frame_info in enumerate(dataset.scene_info.train_cameras):
